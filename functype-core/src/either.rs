@@ -413,7 +413,10 @@ mod tests {
         let left: Either<i32, &str> = Either::left(42);
         let right: Either<i32, &str> = Either::right("hello");
 
-        assert_eq!(left.bimap(|l| l.to_string(), |r| r.len()), Either::Left("42".to_string()));
+        assert_eq!(
+            left.bimap(|l| l.to_string(), |r| r.len()),
+            Either::Left("42".to_string())
+        );
         assert_eq!(right.bimap(|l| l.to_string(), |r| r.len()), Either::Right(5));
     }
 

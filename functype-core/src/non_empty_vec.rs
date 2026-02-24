@@ -16,6 +16,7 @@ use std::hash::{Hash, Hasher};
 /// assert_eq!(v.len(), 3);
 /// ```
 #[derive(Clone)]
+#[allow(clippy::len_without_is_empty)]
 pub struct NonEmptyVec<T> {
     head: T,
     tail: Vec<T>,
@@ -24,10 +25,7 @@ pub struct NonEmptyVec<T> {
 impl<T> NonEmptyVec<T> {
     /// Creates a new `NonEmptyVec` with a single element.
     pub fn new(head: T) -> Self {
-        NonEmptyVec {
-            head,
-            tail: Vec::new(),
-        }
+        NonEmptyVec { head, tail: Vec::new() }
     }
 
     /// Creates a `NonEmptyVec` from a head element and a tail vector.
