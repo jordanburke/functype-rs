@@ -1,6 +1,7 @@
 [package]
 name = "functype-io"
-description = "Async IO effect type for functype"
+description = "Lazy, composable IO effect type for functype"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

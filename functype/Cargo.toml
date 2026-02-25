@@ -1,6 +1,7 @@
 [package]
 name = "functype"
-description = "Scala-inspired functional programming library for Rust"
+description = "Functional programming library for Rust"
+readme = "../README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
