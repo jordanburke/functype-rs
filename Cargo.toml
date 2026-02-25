@@ -11,9 +11,9 @@ repository = "https://github.com/jordanburke/functype-rs"
 
 [workspace.dependencies]
 # Internal crates
-functype-core = { path = "functype-core" }
-functype-io = { path = "functype-io" }
-functype-macros = { path = "functype-macros" }
+functype-core = { path = "functype-core", version = "0.1.0" }
+functype-io = { path = "functype-io", version = "0.1.0" }
+functype-macros = { path = "functype-macros", version = "0.1.0" }
 
 # Runtime
 rpds = "1"
