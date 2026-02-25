@@ -48,17 +48,17 @@
 macro_rules! fdo {
     // Optimization: last bind + yield → map instead of and_then
     ($binding:ident <- $x:expr ; yield $final:expr) => {
-        $x.map(|$binding| $final)
+        $x.map(move |$binding| $final)
     };
 
     // Bind: x <- expr; rest → expr.and_then(|x| fdo!{rest})
     ($binding:ident <- $x:expr ; $($rest:tt)+) => {
-        $x.and_then(|$binding| fdo!{ $($rest)+ })
+        $x.and_then(move |$binding| fdo!{ $($rest)+ })
     };
 
     // Discard bind: _ <- expr; rest
     (_ <- $x:expr ; $($rest:tt)+) => {
-        $x.and_then(|_| fdo!{ $($rest)+ })
+        $x.and_then(move |_| fdo!{ $($rest)+ })
     };
 
     // Let binding: let pat = expr; rest

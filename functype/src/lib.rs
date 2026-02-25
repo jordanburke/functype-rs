@@ -13,3 +13,6 @@
 
 pub use functype_core::prelude;
 pub use functype_core::*;
+
+pub use functype_io;
+pub use functype_io::{Task, IO};

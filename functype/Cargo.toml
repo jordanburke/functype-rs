@@ -9,4 +9,4 @@ repository.workspace = true
 
 [dependencies]
 functype-core.workspace = true
-functype-macros.workspace = true
+functype-io.workspace = true
