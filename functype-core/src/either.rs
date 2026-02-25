@@ -73,60 +73,48 @@ impl<L, R> Either<L, R> {
         }
     }
 
-    /// Applies one of two functions depending on the variant.
-    pub fn fold<T, FL: FnOnce(&L) -> T, FR: FnOnce(&R) -> T>(&self, on_left: FL, on_right: FR) -> T {
+    /// Applies one of two functions depending on the variant (consuming).
+    pub fn fold<T, FL: FnOnce(L) -> T, FR: FnOnce(R) -> T>(self, on_left: FL, on_right: FR) -> T {
         match self {
             Either::Left(l) => on_left(l),
             Either::Right(r) => on_right(r),
         }
     }
 
-    /// Maps over the `Right` value (right-biased).
-    pub fn map<U, F: FnOnce(&R) -> U>(&self, f: F) -> Either<L, U>
-    where
-        L: Clone,
-    {
+    /// Maps over the `Right` value (right-biased, consuming).
+    pub fn map<U, F: FnOnce(R) -> U>(self, f: F) -> Either<L, U> {
         match self {
-            Either::Left(l) => Either::Left(l.clone()),
+            Either::Left(l) => Either::Left(l),
             Either::Right(r) => Either::Right(f(r)),
         }
     }
 
-    /// Maps over the `Left` value.
-    pub fn map_left<U, F: FnOnce(&L) -> U>(&self, f: F) -> Either<U, R>
-    where
-        R: Clone,
-    {
+    /// Maps over the `Left` value (consuming).
+    pub fn map_left<U, F: FnOnce(L) -> U>(self, f: F) -> Either<U, R> {
         match self {
             Either::Left(l) => Either::Left(f(l)),
-            Either::Right(r) => Either::Right(r.clone()),
+            Either::Right(r) => Either::Right(r),
         }
     }
 
-    /// Maps over both sides simultaneously.
-    pub fn bimap<A, B, FL: FnOnce(&L) -> A, FR: FnOnce(&R) -> B>(&self, on_left: FL, on_right: FR) -> Either<A, B> {
+    /// Maps over both sides simultaneously (consuming).
+    pub fn bimap<A, B, FL: FnOnce(L) -> A, FR: FnOnce(R) -> B>(self, on_left: FL, on_right: FR) -> Either<A, B> {
         match self {
             Either::Left(l) => Either::Left(on_left(l)),
             Either::Right(r) => Either::Right(on_right(r)),
         }
     }
 
-    /// Chains a computation over the `Right` value (right-biased).
-    pub fn flat_map<U, F: FnOnce(&R) -> Either<L, U>>(&self, f: F) -> Either<L, U>
-    where
-        L: Clone,
-    {
+    /// Chains a computation over the `Right` value (right-biased, consuming).
+    pub fn flat_map<U, F: FnOnce(R) -> Either<L, U>>(self, f: F) -> Either<L, U> {
         match self {
-            Either::Left(l) => Either::Left(l.clone()),
+            Either::Left(l) => Either::Left(l),
             Either::Right(r) => f(r),
         }
     }
 
     /// Alias for `flat_map`, compatible with `and_then` convention (Option/Result).
-    pub fn and_then<U, F: FnOnce(&R) -> Either<L, U>>(&self, f: F) -> Either<L, U>
-    where
-        L: Clone,
-    {
+    pub fn and_then<U, F: FnOnce(R) -> Either<L, U>>(self, f: F) -> Either<L, U> {
         self.flat_map(f)
     }
 
@@ -138,14 +126,11 @@ impl<L, R> Either<L, R> {
         }
     }
 
-    /// Returns the `Right` value, or computes a default from the `Left`.
-    pub fn get_or_else<F: FnOnce(&L) -> R>(&self, f: F) -> R
-    where
-        R: Clone,
-    {
+    /// Returns the `Right` value, or computes a default from the `Left` (consuming).
+    pub fn get_or_else<F: FnOnce(L) -> R>(self, f: F) -> R {
         match self {
             Either::Left(l) => f(l),
-            Either::Right(r) => r.clone(),
+            Either::Right(r) => r,
         }
     }
 
@@ -227,16 +212,17 @@ impl<L, R> Either<L, R> {
         }
     }
 
-    /// Filters the `Right` value, converting to `Left` if the predicate fails.
-    pub fn filter_or_else<F: FnOnce(&R) -> bool, G: FnOnce(&R) -> L>(&self, pred: F, or_else: G) -> Either<L, R>
-    where
-        R: Clone,
-        L: Clone,
-    {
+    /// Filters the `Right` value, converting to `Left` if the predicate fails (consuming).
+    pub fn filter_or_else<F: FnOnce(&R) -> bool, G: FnOnce(R) -> L>(self, pred: F, or_else: G) -> Either<L, R> {
         match self {
-            Either::Right(r) if pred(r) => Either::Right(r.clone()),
-            Either::Right(r) => Either::Left(or_else(r)),
-            Either::Left(l) => Either::Left(l.clone()),
+            Either::Right(r) => {
+                if pred(&r) {
+                    Either::Right(r)
+                } else {
+                    Either::Left(or_else(r))
+                }
+            }
+            Either::Left(l) => Either::Left(l),
         }
     }
 
@@ -397,7 +383,7 @@ mod tests {
     #[test]
     fn map_identity_law() {
         let e: Either<&str, i32> = Either::right(42);
-        let mapped = e.map(|x| *x);
+        let mapped = e.map(|x| x);
         assert_eq!(mapped, Either::Right(42));
     }
 
@@ -424,7 +410,7 @@ mod tests {
     fn flat_map_chains_right() {
         let e: Either<&str, i32> = Either::right(42);
         let result = e.flat_map(|x| {
-            if *x > 0 {
+            if x > 0 {
                 Either::right(x.to_string())
             } else {
                 Either::left("non-positive")
@@ -443,19 +429,19 @@ mod tests {
     #[test]
     fn flat_map_associativity() {
         let e: Either<&str, i32> = Either::right(10);
-        let f = |x: &i32| -> Either<&str, i32> { Either::right(x + 1) };
-        let g = |x: &i32| -> Either<&str, i32> { Either::right(x * 2) };
+        let f = |x: i32| -> Either<&str, i32> { Either::right(x + 1) };
+        let g = |x: i32| -> Either<&str, i32> { Either::right(x * 2) };
 
         // (m >>= f) >>= g  ==  m >>= (x -> f(x) >>= g)
-        let left = e.flat_map(f).flat_map(g);
-        let right = e.flat_map(|x| f(x).flat_map(g));
-        assert_eq!(left, right);
+        let left_side = e.clone().flat_map(f).flat_map(g);
+        let right_side = e.flat_map(|x| f(x).flat_map(g));
+        assert_eq!(left_side, right_side);
     }
 
     #[test]
     fn and_then_is_flat_map_alias() {
         let e: Either<&str, i32> = Either::right(42);
-        let fm = e.flat_map(|x| Either::right(x + 1));
+        let fm = e.clone().flat_map(|x| Either::right(x + 1));
         let at = e.and_then(|x| Either::right(x + 1));
         assert_eq!(fm, at);
     }
@@ -648,7 +634,7 @@ mod proptest_tests {
     proptest! {
         #[test]
         fn map_identity(e in arb_either()) {
-            let mapped = e.map(|x| *x);
+            let mapped = e.clone().map(|x| x);
             if let Either::Right(r) = &e {
                 prop_assert_eq!(mapped.right_value(), Some(r));
             }
@@ -657,12 +643,12 @@ mod proptest_tests {
         #[test]
         fn flat_map_associativity(x in any::<i32>()) {
             let e: Either<String, i32> = Either::right(x);
-            let f = |v: &i32| -> Either<String, i32> { Either::right(v.wrapping_add(1)) };
-            let g = |v: &i32| -> Either<String, i32> { Either::right(v.wrapping_mul(2)) };
+            let f = |v: i32| -> Either<String, i32> { Either::right(v.wrapping_add(1)) };
+            let g = |v: i32| -> Either<String, i32> { Either::right(v.wrapping_mul(2)) };
 
-            let left = e.flat_map(f).flat_map(g);
-            let right = e.flat_map(|v| f(v).flat_map(g));
-            prop_assert_eq!(left, right);
+            let left_side = e.clone().flat_map(f).flat_map(g);
+            let right_side = e.flat_map(|v| f(v).flat_map(g));
+            prop_assert_eq!(left_side, right_side);
         }
 
         #[test]
