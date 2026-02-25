@@ -1,6 +1,6 @@
 [package]
 name = "functype"
-description = "Scala/ZIO-inspired functional programming library for Rust"
+description = "Scala-inspired functional programming library for Rust"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

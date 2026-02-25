@@ -1,6 +1,6 @@
 //! functype-core: Core functional programming types for Rust.
 //!
-//! This crate provides Scala/ZIO-inspired functional programming primitives
+//! This crate provides Scala-inspired functional programming primitives
 //! including Either, Validated, Try, NonEmptyVec, and persistent collections.
 
 pub mod collections;

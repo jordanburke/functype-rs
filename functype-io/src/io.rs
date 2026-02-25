@@ -41,7 +41,7 @@ impl<A: fmt::Debug> fmt::Debug for IO<A> {
     }
 }
 
-/// Alias for familiarity (ZIO convention).
+/// Alias for `IO<A>`.
 pub type Task<A> = IO<A>;
 
 // ============================================================
@@ -172,7 +172,7 @@ impl<A: Send + 'static> IO<A> {
         }
     }
 
-    /// Sequences two IOs, discarding the first result (ZIO's `*>`).
+    /// Sequences two IOs, discarding the first result.
     pub fn then<B: Send + 'static>(self, other: IO<B>) -> IO<B> {
         IO {
             thunk: Box::new(move || {

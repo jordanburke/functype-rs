@@ -1,6 +1,6 @@
 //! functype-io: Lazy, composable IO effect type for functype.
 //!
-//! Provides `IO<A>`, a deferred computation type inspired by ZIO.
+//! Provides `IO<A>`, a lazy, composable effect type.
 //! Nothing executes until `.run()` is called.
 //!
 //! # Examples
