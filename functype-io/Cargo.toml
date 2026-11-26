@@ -1,6 +1,6 @@
 [package]
 name = "functype-io"
-description = "Lazy, composable IO effect type for functype"
+description = "Effect helpers for async Rust: Exit, run_exit, and retry/repeat policies with TS functype defaults"
 readme = "README.md"
 version.workspace = true
 edition.workspace = true
@@ -10,6 +10,8 @@ repository.workspace = true
 
 [dependencies]
 functype-core.workspace = true
-tokio.workspace = true
-anyhow.workspace = true
+tokio = { workspace = true, features = ["time"] }
 pin-project-lite.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "test-util", "time"] }

@@ -12,7 +12,7 @@ Part of the [functype](https://crates.io/crates/functype) library.
 - **NonEmptyVec\<T\>** — Vec guaranteed to have at least one element
 - **List\<T\>** — Persistent, immutable singly-linked list (structural sharing via Arc)
 - **Map\<K, V\>** — Persistent, immutable hash map (structural sharing via Arc)
-- **fdo!** — Do-notation macro for monadic composition (works with Option, Result, Either, Validated, IO)
+- **fdo!** — Do-notation macro for monadic composition (works with Option, Result, Either, Validated)
 - **Pure** — Trait for lifting values into monadic contexts
 
 ## Extension Traits

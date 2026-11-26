@@ -2,19 +2,18 @@
 
 Scala-inspired functional programming library for Rust.
 
-Brings the ergonomics of Scala's type system — `Either`, `Validated`, `IO`, do-notation — to Rust, without fighting the borrow checker.
+Brings the ergonomics of Scala's type system — `Either`, `Validated`, do-notation — to Rust, without fighting the borrow checker. It is also the Rust side of [functype](https://functype.org/) for TypeScript: [`docs/LIB_SPEC_TS-to-Rust-mapping.md`](docs/LIB_SPEC_TS-to-Rust-mapping.md) maps TS functype code onto Rust.
 
 ```rust
 use functype::prelude::*;
-use functype::IO;
 use functype_core::fdo;
 
-let result = fdo! {
-    x <- IO::succeed(10);
-    y <- IO::succeed(20);
+let result: Either<&str, i32> = fdo! {
+    x <- Either::<&str, i32>::right(10);
+    y <- Either::<&str, i32>::right(20);
     yield x + y
 };
-assert_eq!(result.run().unwrap(), 30);
+assert_eq!(result, Either::Right(30));
 ```
 
 ## Crates
@@ -23,7 +22,7 @@ assert_eq!(result.run().unwrap(), 30);
 |-------|-------------|
 | [`functype`](functype/) | Umbrella crate — re-exports everything |
 | [`functype-core`](functype-core/) | Core types: Either, Validated, Try, NonEmptyVec, persistent collections, fdo! macro |
-| [`functype-io`](functype-io/) | Lazy IO effect type with resource safety and async interop |
+| [`functype-io`](functype-io/) | Effect helpers for async Rust: `Exit`, `run_exit`, retry/repeat policies with TS functype defaults |
 
 ## Core Types
 
@@ -67,82 +66,35 @@ let result = validate_name("").zip(&validate_age(-1));
 assert!(result.is_invalid());
 ```
 
-### IO\<A\>
+### Effects (functype-io)
 
-Lazy, composable effect type. Nothing executes until `.run()`.
-
-```rust
-use functype::IO;
-
-let io = IO::effect(|| {
-    println!("side effect!");
-    42
-}).map(|x| x * 2);
-
-// Nothing printed yet
-let result = io.run().unwrap(); // prints "side effect!", returns 84
-```
-
-**Why `IO<A>` instead of three type parameters:**
-- **No R (environment)**: Rust has compile-time DI via function arguments + trait bounds.
-- **No E (typed error)**: `Result` already handles typed errors. For typed errors, use `IO<Result<A, E>>` — opt-in, not mandatory.
-- **One type param**: Clean signatures. `io.map(|x| x + 1)` without error type propagation everywhere.
-
-#### Constructors
+TS functype's `IO<R, E, A>` maps to a plain `async fn -> Result<A, E>`. Rust futures are already lazy, so there is no `IO` type. `functype-io` ships only what Rust lacks. Every helper takes a factory closure, last, because a future runs once.
 
 ```rust
-IO::succeed(42)                              // pure value
-IO::fail(anyhow::anyhow!("boom"))            // pure error
-IO::effect(|| compute())                     // infallible side effect
-IO::effect_result(|| Ok(compute()?))         // fallible side effect
-IO::from_result(Ok(42))                      // lift Result
-IO::from_option(Some(42), || error)          // lift Option
-IO::from_either(Either::Right(42))           // lift Either
+use functype::functype_io::{retry_with_backoff, Backoff};
+use std::time::Duration;
+
+// TS: getUser(id).retryWithBackoff({ n: 3, baseMs: 250 })
+let user = retry_with_backoff(Backoff::new(3, Duration::from_millis(250)), || get_user(id)).await;
 ```
 
-#### Combinators
+| TS | Rust |
+|----|------|
+| `io.retry(n)` | `retry(n, factory)` |
+| `io.retryWithDelay(n, ms)` | `retry_with_delay(n, delay, factory)` |
+| `io.retryWhile({ n, while, delayMs })` | `retry_while(n, delay, retry_if, factory)` |
+| `io.retryWithBackoff({ n, baseMs, ... })` | `retry_with_backoff(Backoff::new(n, base), factory)`, or `retry_with_backoff_while` |
+| `io.repeatUntil(done, { max, delayMs })` | `repeat_until(max, delay, done, factory)` → `Err(RepeatError::Exhausted)` at the bound |
+| `io.repeatWhile(cont, { max, delayMs })` | `repeat_while(max, delay, keep_going, factory)` |
+| `IO.firstSuccessOf(effects)` | `first_success_of(nev![...])` |
+| `io.runExit({ signal })` | `run_exit(fut, token.cancelled()).await` → `Exit<E, A>` |
+| a stored or `dyn` effect | `BoxIO<'a, A, E>` |
 
-```rust
-io.map(|x| x + 1)                           // transform success
-io.flat_map(|x| IO::succeed(x + 1))         // chain effects
-io.zip(other)                                // combine into tuple
-io.zip_with(other, |a, b| a + b)            // combine with function
-io.then(other)                               // sequence, discard first
-io.tap(|x| println!("{x}"))                  // side effect, return original
-```
-
-#### Error Handling
-
-```rust
-io.map_error(|e| anyhow::anyhow!("wrapped: {e}"))  // transform error
-io.catch(|e| IO::succeed(fallback))                  // recover
-io.or_else(IO::succeed(default))                     // fallback on error
-io.either()                                          // IO<Either<Error, A>> (infallible)
-IO::retry(|| make_request(), 3)                      // retry up to 3 times
-```
-
-#### Resource Safety
-
-```rust
-IO::bracket(
-    IO::effect(|| open_file()),       // acquire
-    |file| IO::effect(|| read(file)), // use
-    |file| close(file),               // release (always runs)
-);
-
-io.ensuring(|| cleanup())  // finalizer runs on both success and error
-```
-
-#### Async Interop
-
-```rust
-IO::from_future(async { Ok(fetch().await?) })  // future -> IO
-io.to_future().await                            // IO -> future
-```
+The retry and repeat helpers act on `Err` only; a panic unwinds through them. Only `run_exit` catches a panic, as `Exit::Die`.
 
 ### fdo! Macro
 
-Scala/Haskell-style do-notation. Works with any type that has `and_then` and `map`: `Option`, `Result`, `Either`, `Validated`, `IO`.
+Scala/Haskell-style do-notation. Works with any type that has `and_then` and `map`: `Option`, `Result`, `Either`, `Validated`.
 
 ```rust
 use functype_core::fdo;
@@ -232,7 +184,7 @@ Adds Scala-style combinators to standard library types.
 
 ### Pure Trait
 
-Lifts a value into any monadic context. Implemented for `Option`, `Result`, `Either`, `Validated`, and `IO`.
+Lifts a value into any monadic context. Implemented for `Option`, `Result`, `Either`, and `Validated`.
 
 ```rust
 use functype::prelude::*;
