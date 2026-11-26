@@ -174,11 +174,13 @@ assert_eq!(m2.len(), 3);
 
 ### Extension Traits
 
-Adds Scala-style combinators to standard library types.
+Adds the conversions std lacks to `Option` and `Result`.
 
-**OptionExt**: `get_or_else`, `fold`, `to_either`, `to_validated`, `tap_some`, `tap_none`, `when`, `contains_where`, `zip_with`
+**OptionExt**: `to_either`, `to_validated`, `to_non_empty_vec`, `tap_none`
 
-**ResultExt**: `get_or_else`, `fold`, `to_either`, `to_validated`, `tap_ok`, `tap_err`, `bimap`, `recover`, `recover_with`, `swap`
+**ResultExt**: `to_either`, `to_validated`, `swap`
+
+Only conversions std lacks. For the rest, use std: `unwrap_or_else`, `map_or_else`, `inspect`/`inspect_err`, `is_some_and`, `or_else`, `bool::then`.
 
 **TupleExt**: `map_n` for 2- through 5-tuples
 

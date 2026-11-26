@@ -508,10 +508,12 @@ mod tests {
         assert_eq!(e.to_option(), None);
     }
 
+    type BoxedFn = Box<dyn Fn(&i32) -> i32>;
+
     #[test]
     fn ap_applies_function() {
         let value: Either<&str, i32> = Either::right(21);
-        let f: Either<&str, Box<dyn Fn(&i32) -> i32>> = Either::right(Box::new(|x| x * 2));
+        let f: Either<&str, BoxedFn> = Either::right(Box::new(|x| x * 2));
         let result = value.ap(&f);
         assert_eq!(result, Either::Right(42));
     }

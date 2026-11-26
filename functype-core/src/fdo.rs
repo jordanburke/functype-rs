@@ -85,7 +85,6 @@ macro_rules! fdo {
 #[cfg(test)]
 mod tests {
     use crate::either::Either;
-    use crate::pure::Pure;
     use crate::validated::Validated;
 
     // ===== Option tests =====
