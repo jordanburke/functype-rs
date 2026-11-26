@@ -29,7 +29,9 @@ names grafted onto types Rust already has.
 
 MSRV note: the workspace pins `rust-version = "1.75"`. `inspect`/`inspect_err` need 1.76 and
 `LazyLock` needs 1.80. Either raise the MSRV or map those rows to `map(|v| { f(&v); v })` and
-`OnceLock`.
+`OnceLock`. Crates have their own MSRVs: indexmap 2.14 declares 1.85, so translated code
+on 1.75 pins an older indexmap 2.x or raises the MSRV. Check `backon`, `tokio-util` and
+`futures-util` the same way before adding them.
 
 ## Type map
 
@@ -41,13 +43,13 @@ MSRV note: the workspace pins `rust-version = "1.75"`. `inspect`/`inspect_err` n
 | `Either.fromNullable(v, l)` | `opt.ok_or(l)` | std |
 | `Try<T>` | `Result<T, E>` | Pick a concrete `E`; TS is always `Error`, so `anyhow::Error` is the closest default. `functype_core::Try` (`Result<T, TryError>`, catches panics) maps here only where the TS code relied on catching a crash. See Traps |
 | `Try(() => f())` / `tryCatch` | a fn returning `Result` | std |
-| `Do(function* …)` over Option/Either/Try | **`fdo!`** (`functype-core/src/fdo.rs:50`), or `?` inside a helper fn / immediately-called closure | **Not bare `?` in the enclosing fn.** See Traps |
+| `Do(function* …)` over Option/Either/Try | **`fdo!`** (`functype-core/src/fdo.rs:48`), or `?` inside a helper fn / immediately-called closure | **Not bare `?` in the enclosing fn.** See Traps |
 | `Do` over `List` (cartesian product) | iterator `flat_map` | std |
 | `DoAsync` | `async` block + `?` | same caveat as `Do` |
 | `List<T>` | `Vec<T>` | TS `List` copies its array on every change (`list/List.ts:270-304`). See List methods |
 | `LazyList<T>` | `impl Iterator<Item = T>` | std |
-| `Map<K, V>` / `Set<T>` | `indexmap::IndexMap` / `IndexSet` | TS `Map` wraps the ES Map (`map/Map.ts:17`), which iterates in insertion order. `HashMap` (arbitrary) and `BTreeMap` (sorted) change iteration order. Use them only where order is not observed |
-| `Stack<T>` | `Vec<T>` (`push`/`pop`/`last`) | std |
+| `Map<K, V>` / `Set<T>` | `indexmap::IndexMap` / `IndexSet` | TS `Map` wraps the ES Map (`map/Map.ts:17`), which iterates in insertion order. `HashMap` (arbitrary) and `BTreeMap` (sorted) change iteration order. Use them only where order is not observed. Remove with **`shift_remove`**: `IndexMap::remove` is deprecated because it reorders the map (indexmap 2.x) |
+| `Stack<T>` | `Vec<T>` (`push`/`pop`/`last`) | TS `Stack` is immutable; apply the `List` clone rule |
 | `Lazy<T>` | `LazyLock<Result<T, E>>` / `OnceLock` | TS `Lazy` memoizes a thrown error (`lazy/Lazy.ts:219-246`); a panicking `LazyLock` poisons and re-panics instead. Make the error a value |
 | `Ref<A>` | `Cell`/`RefCell` (one thread), `Arc<Mutex<A>>` or atomics (shared) | std |
 | `Tuple` | native tuples | std |
@@ -81,7 +83,7 @@ MSRV note: the workspace pins `rust-version = "1.75"`. `inspect`/`inspect_err` n
 | `swap` | no std method; `functype_core::ResultExt::swap` | |
 | `bimap(fl, fr)` | `.map_err(fl).map(fr)` | **Not `ResultExt::bimap`**, which takes `(on_ok, on_err)`. See Traps |
 | `filterOrElse(p, e)` | `and_then(\|v\| if p(&v) { Ok(v) } else { Err(e(v)) })` | |
-| `recover(f)` (Try) | `unwrap_or_else(f)`, or `or_else(\|e\| Ok(f(e)))` to stay a `Result` | TS `recover` returns a value (`try/Try.ts:118`) |
+| `recover(f)` (Try) | `or_else(\|e\| Ok(f(e)))`, or `or_else(f)` when `f` can fail | TS `recover` returns `Try<T \| U>` (`try/Try.ts:118`) and runs `f` inside `Try` (337-339), so a throwing `f` becomes `Failure`. Not `unwrap_or_else` |
 | `recoverWith(f)` (Try) | `or_else(f)` | |
 | `traverse` / `sequence` | `iter.map(f).collect::<Result<Vec<_>, _>>()` | |
 | `flatMapAsync` / `mapAsync` / `foldAsync` | inside an `async` block: `match` or `?` on the awaited value | |
@@ -96,7 +98,7 @@ TS list is never used again, mutate the `Vec`. When it is still used, `clone()` 
 | `add(x)` | `v.push(x)` (old list dead) / `{ let mut w = v.clone(); w.push(x); w }` |
 | `prepend(x)` | `v.insert(0, x)` |
 | `concat(o)` | `v.extend(o)` |
-| `removeAt(i)` | `v.remove(i)` |
+| `removeAt(i)` | `if i < v.len() { v.remove(i); }` (TS returns the list unchanged when `i` is out of range, `list/List.ts:267-270`; bare `v.remove(i)` panics) |
 | `map` / `filter` / `flatMap` | `into_iter().map(…).collect()` (or `iter()` to keep the original) |
 | `foldLeft(z)(op)` | `iter().fold(z, op)` |
 | `reduce` | `iter().copied().reduce(op)` / `into_iter().reduce(op)` |
@@ -107,14 +109,14 @@ TS list is never used again, mutate the `Vec`. When it is still used, `clone()` 
 | `find` / `exists` / `every` | `iter().find` / `any` / `all` |
 | `reverse` | `v.reverse()` / `iter().rev()` |
 | `sortBy(f)` | `v.sort_by_key(f)` |
-| `distinct` | `IndexSet` collect, to keep first-seen order |
+| `distinct` | `IndexSet` collect, to keep first-seen order. TS compares objects by reference (`list/List.ts:315-324`), Rust by value (`Eq`/`Hash`); the same holds for `groupBy` and `Map` keys |
 | `groupBy(f)` | fold into an `IndexMap<K, Vec<T>>` |
 | `zip` / `zipWithIndex` | `iter().zip` / `iter().enumerate()` |
 | `partition(p)` | `into_iter().partition(p)` |
 
 ## Traps
 
-Each of these compiles and changes meaning.
+Each of these compiles and changes meaning, except the last, which is a rule to keep.
 
 - **`Either<L, R>` → `Result<R, L>` swaps the type parameters.** When `L` and `R` differ, a
   mis-order fails to compile. When they are the same type (`Either<string, string>`), it compiles
@@ -128,14 +130,24 @@ Each of these compiles and changes meaning.
   `ResultExt::bimap` is `(on_ok, on_err)` (`functype-core/src/result_ext.rs:27`). With same-typed
   sides it compiles and swaps. Translate to `.map_err(fl).map(fr)` only. (`ResultExt::bimap`
   should be reordered or removed; see Trim.)
-- **`Try.map` catches errors, `Result::map` doesn't.** TS `Try.map` runs `f` inside `Try`
-  (`try/Try.ts:197`), so a throw becomes `Failure`. A Rust `f` that can fail must return `Result`
-  and go through `and_then`; a panic in `map` is not caught.
+- **TS IO recovery also catches defects; Rust `match Err` doesn't.** In TS the error channel
+  holds `Die` as well as `Failure` (`io/IO.ts:1131-1135`), and `Recover`, `RecoverWith` and
+  `MapError` branch on it (`io/IO.ts:1611-1630`). So a throw inside `IO.sync` is recovered or
+  retried by `recover`, `recoverWith`, `catchAll`, `mapError`, `retry*`, `firstSuccessOf` and
+  `timeoutTo`. In Rust a panic passes straight through `match fut.await { Err(e) => … }`.
+  **Rule: anything the TS code expects to recover from must return `Err` in Rust.** A throwing
+  TS step becomes a `Result`-returning Rust step. The functype-rs helpers do not catch panics;
+  only `run_exit` reports one, as `Die`.
+- **`Try.map` and `Try.recover` catch errors; `Result::map` and `or_else` don't.** TS `Try.map` runs `f` inside `Try`
+  (`try/Try.ts:197`), so a throw becomes `Failure`; `Try.recover` does the same (`try/Try.ts:337-339`).
+  A Rust `f` that can fail must return `Result` and go through `and_then` (for `map`) or
+  `or_else` (for `recover`); a panic in `map` is not caught.
 - **`Try` is not panic capture.** Translating every TS `Try` to `functype_core::Try` wraps
   ordinary errors in `catch_unwind`. Most TS `Try` sites become plain `Result`.
 - **`getOrElse` laziness.** TS `getOrElse` takes a thunk. Map it to `unwrap_or_else`, not
   `unwrap_or`, or the default is computed eagerly.
-- **`Map`/`Set` iteration order.** See the type map: use `IndexMap`/`IndexSet` when order is
+- **`Map`/`Set` iteration order.** See the type map: use `IndexMap`/`IndexSet`, and remove with
+  `shift_remove`, never `remove` or `swap_remove`, when order is
   observed.
 - **`fold` argument order** agrees today (TS `fold(onNone, onSome)` / `fold(onLeft, onRight)`
   and `map_or_else(default, f)`). Keep any functype-rs `fold` in that order.
@@ -156,7 +168,7 @@ and `async fn` is what a Rust reader or an LLM writes by default.
   `runSyncOrThrow` exist.
 - Constructors: `sync`, `succeed`, `fail`, `die`, `async`, `tryPromise`, `tryCatch`, `all`,
   `forEach`, `race`, `firstSuccessOf`, `sleep`.
-- Generator do-notation: `IO.gen` / `IO.Do` (`io/IO.ts:2710,2753`).
+- Do-notation: `IO.gen` (generator, `io/IO.ts:2710`) and the `IO.Do` builder (`io/IO.ts:2734`).
 - Policies: `retry`, `retryWithDelay`, `retryWhile`, `retryWithBackoff`, `repeatUntil`,
   `repeatWhile`, `timeout`, `timeoutTo`, `delay`, `interruptOn(signal)`.
 - Resources: `bracket`, `bracketExit`, `acquireRelease`.
@@ -181,12 +193,12 @@ and `async fn` is what a Rust reader or an LLM writes by default.
 | `IO.async(f)` / `IO.tryPromise` | `.await` the future |
 | `IO.all` (default: all at once, `io/IO.ts:2421`) | `tokio::try_join!` / `futures::future::try_join_all` |
 | `IO.forEach` (default: one at a time, `io/IO.ts:2654`) | `for x in items { out.push(f(x).await?) }` |
-| `all` / `forEach` with `{ concurrency: n }` | `stream::iter(items).map(f).buffered(n).try_collect().await` |
-| `IO.race` (first to settle, success or failure) | `tokio::select!` |
+| `all` / `forEach` with `{ concurrency: n }` | `stream::iter(items).map(f).buffered(n).try_collect().await`. Same result type, but which error comes back can differ: `try_collect` returns the lowest-index error once earlier items finish, while TS fails on the first failure in time and aborts the rest (`io/IO.ts:2013-2027`) |
+| `IO.race(effects)` (first to settle, success or failure; takes an array, `io/IO.ts:2632`) | `tokio::select!` for a fixed set; `futures::future::select_all` for a dynamic list |
 | `IO.firstSuccessOf` (runs in sequence; first success, else last failure, `io/IO.ts:2452-2457`) | functype-rs `first_success_of(factories)` |
 | `IO.sleep(ms)` / `delay(ms)` | `tokio::time::sleep` |
 | `timeout(ms)` | `tokio::time::timeout(d, fut).await` → `Result<Result<A, E>, Elapsed>`; map `Elapsed` into the error enum |
-| `timeoutTo(ms, b)` | `match timeout(d, fut).await { Ok(Ok(a)) => a, _ => b }`. TS returns `b` on a timeout **and on any typed failure**: it is `this.timeout(ms).recover(fallback)` (`io/IO.ts:1081-1083`), and `Recover` replaces every typed failure (1330-1331), though its type says `IO<R, E, A \| B>`. Open TS question: bug or intended? If TS changes, this row becomes `timeout(d, fut).await.unwrap_or(Ok(b))` |
+| `timeoutTo(ms, b)` | `match timeout(d, fut).await { Ok(Ok(a)) => a, _ => b }`. TS returns `b` on a timeout **and on any failure or defect**: it is `this.timeout(ms).recover(fallback)` (`io/IO.ts:1081-1083`), and the async `Recover` replaces anything in the error channel, defects included (1619-1623), though its type says `IO<R, E, A \| B>`. Open TS question: bug or intended? If TS changes, this row becomes `timeout(d, fut).await.unwrap_or(Ok(b))` |
 | `retry(n)` (no delay, `io/IO.ts:918-921`) | functype-rs `retry(n, \|\| get_user(id))` |
 | `retryWithDelay(n, ms)` | functype-rs `retry_with_delay(n, d, factory)`, or `backon` `ConstantBuilder::default().with_delay(d).with_max_times(n)` |
 | `retryWithBackoff(opts)` | functype-rs `retry_with_backoff(opts, factory)` with TS defaults (jitter on at 50–100% of the delay, 30 s cap, `io/IO.ts:941-943`). `backon` `ExponentialBuilder` works only with every setting explicit (`with_max_times`, `with_min_delay`, `with_max_delay`, `with_jitter`): its defaults (no jitter, factor 2, 1 s min, 60 s max, 3 tries) differ from TS, and its jitter formula differs too |
@@ -249,7 +261,8 @@ Rejected:
   `E | E2` becomes a module enum with `From` impls, and `?` widens. An enum can't lose a variant,
   so `catchTag` can't narrow the type. **`catchTag` is a manual rewrite**: a `match` on the
   variant that handles one case and re-raises the rest into the same enum.
-- **`.await` reports defects as panics.** TS `run()` throws on `Die`/`Interrupted`. In Rust a
+- **`.await` reports defects as panics.** TS `run()` throws on `Die`/`Interrupted` (and TS
+  recovery catches `Die` first; see Traps). In Rust a
   panic propagates through `.await` on its own within one task; across `tokio::spawn` it arrives
   as a `JoinError`. A dropped future simply stops. Use
   `run_exit` where the TS code inspected `Exit`.
@@ -300,12 +313,14 @@ Since translated code goes to std, these should be slimmed or removed:
 - `ResultExt` methods with std equivalents (`get_or_else`, `tap_ok`, `tap_err`, `recover`).
   `ResultExt::bimap` must be reordered to `(on_err, on_ok)` or removed (see Traps).
 - Persistent `List`/`Map` (on `rpds`): TS lists "no persistent data structures" as a non-goal
-  (`docs/ROADMAP.md`, line 60). If they stay, they are Rust-only and outside this mapping.
+  (`docs/ROADMAP.md`, line 61). If they stay, they are Rust-only and outside this mapping.
 - The `functype-io` `IO<A>` struct (boxed sync thunk, `anyhow` errors) and its `Task<A>` alias
   (`functype-io/src/io.rs:45`; TS removed `Task` in 2.0). Replaced by `async fn` plus the IO
   helpers above.
 
-Keep: `fdo!` and `Pure` (they back the `Do` mapping), `Validated`, `NonEmptyVec`.
+Keep: `fdo!` and `Pure` (they back the `Do` mapping), `Validated`, `NonEmptyVec`,
+`functype_core::Try` (for the TS sites that relied on catching a crash), and `ResultExt::swap`
+(no std equivalent).
 
 ## Next steps
 
