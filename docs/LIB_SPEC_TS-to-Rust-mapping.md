@@ -18,7 +18,7 @@ names grafted onto types Rust already has.
 2. **Map to std where Rust has the type.** TS functype exists partly because TypeScript has no
    `Option` or `Result`. Rust does. A translated program should read as normal Rust.
 3. **functype-rs supplies only what Rust lacks.** Error accumulation (`Validated`,
-   `NonEmptyVec`), exit reporting (`Exit`, `run_exit`), a factory-based `retry`, and an
+   `NonEmptyVec`), exit reporting (`Exit`, `run_exit`), named retry/repeat policies with TS defaults, and an
    expression-level do-notation (`fdo!`). Where an established crate covers a gap (`backon`,
    `tokio-util`, `indexmap`), the mapping points to it instead.
 4. **A translation must compile correctly or fail to compile.** This is TS functype's own rule
@@ -125,7 +125,7 @@ Each of these compiles and changes meaning.
   enclosing fn. When the return types happen to match, it compiles and skips the rest of the fn.
   Use `fdo!`, or put the `?` chain in its own helper fn or an immediately-called closure.
 - **`bimap` argument order.** TS `bimap(fl, fr)` is left first (`either/Either.ts:107`).
-  `ResultExt::bimap` is `(on_ok, on_err)` (`functype-core/src/result_ext.rs:26`). With same-typed
+  `ResultExt::bimap` is `(on_ok, on_err)` (`functype-core/src/result_ext.rs:27`). With same-typed
   sides it compiles and swaps. Translate to `.map_err(fl).map(fr)` only. (`ResultExt::bimap`
   should be reordered or removed; see Trim.)
 - **`Try.map` catches errors, `Result::map` doesn't.** TS `Try.map` runs `f` inside `Try`
@@ -152,7 +152,7 @@ and `async fn` is what a Rust reader or an LLM writes by default.
   `timeout` adds `TimeoutError` (728), `catchTag` gives `Exclude<E, {_tag: K}> | E2` (443).
   `recover`/`timeoutTo` widen the value to `A | B` (413, 735).
 - `run()` returns `Promise<Either<E, A>>` and **throws** on `Die` and `Interrupted`
-  (`io/IO.ts:1172-1180`); `runExit()` returns `Promise<Exit<E, A>>`; `runSync`, `runOrThrow`,
+  (`io/IO.ts:1175-1179`); `runExit()` returns `Promise<Exit<E, A>>`; `runSync`, `runOrThrow`,
   `runSyncOrThrow` exist.
 - Constructors: `sync`, `succeed`, `fail`, `die`, `async`, `tryPromise`, `tryCatch`, `all`,
   `forEach`, `race`, `firstSuccessOf`, `sleep`.
@@ -176,20 +176,27 @@ and `async fn` is what a Rust reader or an LLM writes by default.
 | `recover(v)` / `recoverWith(f)` / `catchAll(f)` | `match fut.await { Ok(a) => a, Err(e) => … }` |
 | `catchTag(tag, f)` | `match` on the error-enum variant; manual rewrite, see Errors |
 | `tap(f)` / `tapError(f)` | `.await.inspect(f)` / `.inspect_err(f)` (std 1.76) |
-| `IO.succeed(a)` / `IO.fail(e)` | `Ok(a)` / `Err(e)` |
+| `IO.succeed(a)` / `IO.fail(e)` | `Ok(a)` / `Err(e.into())` (`.into()` widens into the module error enum) |
 | `IO.sync(f)` / `IO.tryCatch(f, onErr)` | a sync call / `f().map_err(onErr)` |
 | `IO.async(f)` / `IO.tryPromise` | `.await` the future |
-| `IO.all` / `forEach` | `tokio::try_join!` / `futures::future::try_join_all` |
-| `IO.race` / `firstSuccessOf` | `tokio::select!` |
+| `IO.all` (default: all at once, `io/IO.ts:2421`) | `tokio::try_join!` / `futures::future::try_join_all` |
+| `IO.forEach` (default: one at a time, `io/IO.ts:2654`) | `for x in items { out.push(f(x).await?) }` |
+| `all` / `forEach` with `{ concurrency: n }` | `stream::iter(items).map(f).buffered(n).try_collect().await` |
+| `IO.race` (first to settle, success or failure) | `tokio::select!` |
+| `IO.firstSuccessOf` (runs in sequence; first success, else last failure, `io/IO.ts:2452-2457`) | functype-rs `first_success_of(factories)` |
 | `IO.sleep(ms)` / `delay(ms)` | `tokio::time::sleep` |
 | `timeout(ms)` | `tokio::time::timeout(d, fut).await` → `Result<Result<A, E>, Elapsed>`; map `Elapsed` into the error enum |
-| `timeoutTo(ms, b)` | `timeout(d, fut).await.unwrap_or(Ok(b))` |
-| `retry(n)` / `retryWithDelay` / `retryWithBackoff` / `retryWhile` | `backon` with a factory: `(\|\| get_user(id)).retry(ExponentialBuilder::default())`, or the functype-rs `retry` helper |
-| `repeatUntil` / `repeatWhile` | a `loop` around the factory call |
-| `interruptOn(signal)` | `tokio_util::sync::CancellationToken` + `select!` |
+| `timeoutTo(ms, b)` | `match timeout(d, fut).await { Ok(Ok(a)) => a, _ => b }`. TS returns `b` on a timeout **and on any typed failure**: it is `this.timeout(ms).recover(fallback)` (`io/IO.ts:1081-1083`), and `Recover` replaces every typed failure (1330-1331), though its type says `IO<R, E, A \| B>`. Open TS question: bug or intended? If TS changes, this row becomes `timeout(d, fut).await.unwrap_or(Ok(b))` |
+| `retry(n)` (no delay, `io/IO.ts:918-921`) | functype-rs `retry(n, \|\| get_user(id))` |
+| `retryWithDelay(n, ms)` | functype-rs `retry_with_delay(n, d, factory)`, or `backon` `ConstantBuilder::default().with_delay(d).with_max_times(n)` |
+| `retryWithBackoff(opts)` | functype-rs `retry_with_backoff(opts, factory)` with TS defaults (jitter on at 50–100% of the delay, 30 s cap, `io/IO.ts:941-943`). `backon` `ExponentialBuilder` works only with every setting explicit (`with_max_times`, `with_min_delay`, `with_max_delay`, `with_jitter`): its defaults (no jitter, factor 2, 1 s min, 60 s max, 3 tries) differ from TS, and its jitter formula differs too |
+| `retryWhile(opts)` (predicate gets `(error, attempt)`) | functype-rs `retry_while(opts, factory)` |
+| `repeatUntil(done, { max })` / `repeatWhile` | functype-rs `repeat_until(max, delay, factory, done)` / `repeat_while`, failing with `RepeatExhausted` (carrying the last value) after `max` runs (`io/IO.ts:959-971`). **Not a bare `loop`**: it compiles and can spin forever |
+| `interruptOn(signal)` | `tokio_util::sync::CancellationToken` + `select!`, mapping cancellation to an `Interrupted` variant of the error enum (TS puts `InterruptedError` in `E`, `io/IO.ts:770`) |
 | `bracket` / `acquireRelease` | a `Drop` guard for sync release; see Limits |
 | `run()` | `.await` |
-| `runExit()` | functype-rs `run_exit(fut).await` → `Exit<E, A>` |
+| `runExit({ signal })` | functype-rs `run_exit(fut, token).await` → `Exit<E, A>` |
+| fire-and-forget `io.run()` (no `await`) | `tokio::spawn(fut)` |
 | `runSync()` | a plain sync fn returning `Result` |
 | `provide*` | see Services |
 | stored or dynamically dispatched `IO` | `BoxIO<'a, A, E>` (below) |
@@ -197,9 +204,14 @@ and `async fn` is what a Rust reader or an LLM writes by default.
 ### What functype-rs ships for IO
 
 Only the gaps:
-- **`Exit<E, A>`** with `Success`/`Failure`/`Die`/`Interrupted`, and **`run_exit`**, which runs
-  a future and catches a panic as `Die` and a cancellation as `Interrupted`.
-- **`retry`**, a small factory-based helper, for code that doesn't want `backon`.
+- **`Exit<E, A>`** with `Success`/`Failure`/`Die`/`Interrupted`, and **`run_exit(fut, token)`**,
+  which runs a future, catches a panic as `Die`, and selects on a `CancellationToken` to report
+  `Interrupted`, as TS `runExit({ signal })` does (`io/IO.ts:1035-1042`). A dropped future reports
+  nothing, so the token is required.
+- **Named policy helpers with TS defaults**, each taking a factory: `retry`, `retry_with_delay`,
+  `retry_with_backoff`, `retry_while`, `repeat_until`, `repeat_while`, `first_success_of`.
+  These are the places where TS has a named policy and Rust has only a primitive, so a bare
+  primitive would compile with different counts, delays or bounds.
 - **`BoxIO<'a, A, E>`** = `Pin<Box<dyn Future<Output = Result<A, E>> + Send + 'a>>`, for storing
   futures and for trait objects.
 - Optionally an **`IO<A, E>` trait** (`Future<Output = Result<A, E>>` via a blanket impl), used
@@ -230,13 +242,16 @@ Rejected:
   Principle 4 holds.
 - **A future that is never awaited never runs.** TS `io.run()` without `await` still runs; a Rust
   future without `.await` does nothing, and the compiler only warns (`unused_must_use`). Treat
-  that warning as an error (`#![deny(unused_must_use)]`).
+  that warning as an error (`#![deny(unused_must_use)]`). The lint misses `let _ = fut;` and a
+  future bound to a name and never awaited, so review for those. Fire-and-forget TS code maps to
+  `tokio::spawn`.
 - **Errors: one error enum per module, widened by `From`, never narrowed.** Rust has no unions, so
   `E | E2` becomes a module enum with `From` impls, and `?` widens. An enum can't lose a variant,
   so `catchTag` can't narrow the type. **`catchTag` is a manual rewrite**: a `match` on the
   variant that handles one case and re-raises the rest into the same enum.
 - **`.await` reports defects as panics.** TS `run()` throws on `Die`/`Interrupted`. In Rust a
-  panic propagates through `.await` on its own, and a dropped future simply stops. Use
+  panic propagates through `.await` on its own within one task; across `tokio::spawn` it arrives
+  as a `JoinError`. A dropped future simply stops. Use
   `run_exit` where the TS code inspected `Exit`.
 
 ### Limits
@@ -286,7 +301,6 @@ Since translated code goes to std, these should be slimmed or removed:
   `ResultExt::bimap` must be reordered to `(on_err, on_ok)` or removed (see Traps).
 - Persistent `List`/`Map` (on `rpds`): TS lists "no persistent data structures" as a non-goal
   (`docs/ROADMAP.md`, line 60). If they stay, they are Rust-only and outside this mapping.
-
 - The `functype-io` `IO<A>` struct (boxed sync thunk, `anyhow` errors) and its `Task<A>` alias
   (`functype-io/src/io.rs:45`; TS removed `Task` in 2.0). Replaced by `async fn` plus the IO
   helpers above.
@@ -295,7 +309,8 @@ Keep: `fdo!` and `Pure` (they back the `Do` mapping), `Validated`, `NonEmptyVec`
 
 ## Next steps
 
-1. Build `Exit`, `run_exit`, `retry` and `BoxIO`; remove the `IO<A>` struct.
+1. Build `Exit`, `run_exit(fut, token)`, the policy helpers and `BoxIO`; remove the `IO<A>` struct.
+   Ask on the TS side whether `timeoutTo` recovering every failure is intended.
 2. Write the error-enum convention, with a worked `catchTag` rewrite.
 3. Trim the std duplicates and fix `ResultExt::bimap`.
 4. Map the remaining modules: `Match`/`Cond`, `Http`, `Decoder`, serialization.
