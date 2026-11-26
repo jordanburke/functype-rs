@@ -212,7 +212,7 @@ functype-io = { git = "https://github.com/jordanburke/functype-rs" }
 
 ## Requirements
 
-- Rust 1.75+
+- Rust 1.85+
 - Edition 2021
 
 ## License

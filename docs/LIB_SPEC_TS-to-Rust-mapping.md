@@ -27,11 +27,10 @@ names grafted onto types Rust already has.
 5. **No alias layer.** Don't add `get_or_else` and friends onto std `Option`/`Result` just to
    match TS names. It gives every operation two names. Put the name map in this doc instead.
 
-MSRV note: the workspace pins `rust-version = "1.75"`. `inspect`/`inspect_err` need 1.76 and
-`LazyLock` needs 1.80. Either raise the MSRV or map those rows to `map(|v| { f(&v); v })` and
-`OnceLock`. Crates have their own MSRVs: indexmap 2.14 declares 1.85, so translated code
-on 1.75 pins an older indexmap 2.x or raises the MSRV. Check `backon`, `tokio-util` and
-`futures-util` the same way before adding them.
+MSRV note: the workspace declares `rust-version = "1.85"`, the MSRV of `tokio`, which
+functype-io depends on. CI checks the libraries on 1.85. Every std method this doc maps to is
+stable by then (`inspect`/`inspect_err` 1.76, `LazyLock` 1.80), and indexmap 2.14 also needs
+1.85. Check the MSRV of `backon`, `tokio-util` and `futures-util` before adding them.
 
 ## Type map
 
