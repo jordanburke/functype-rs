@@ -223,4 +223,26 @@ mod tests {
         };
         assert_eq!(x.to_string(), "Repeat exhausted after 5 iterations");
     }
+
+    #[tokio::test]
+    async fn max_one_runs_once() {
+        let calls = Cell::new(0);
+        let r = repeat_until(1, None, |_| false, || counter(&calls)).await;
+        assert_eq!(
+            r,
+            Err(RepeatError::Exhausted(RepeatExhausted {
+                max: 1,
+                last_value: Some(1)
+            }))
+        );
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn repeat_futures_are_send_when_their_inputs_are() {
+        fn assert_send<T: Send>(_: &T) {}
+        let factory = || async { Ok::<u32, String>(1) };
+        assert_send(&repeat_until(1, None, |_| true, factory));
+        assert_send(&repeat_while(1, None, |_| false, factory));
+    }
 }

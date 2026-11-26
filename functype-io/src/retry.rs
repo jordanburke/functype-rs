@@ -157,7 +157,7 @@ impl Backoff {
         Backoff { jitter, ..self }
     }
 
-    /// The delay before retry `attempt` (1-indexed), without jitter.
+    /// The delay before retry `attempt` (1-indexed), without jitter. `attempt` 0 is treated as 1.
     ///
     /// Never panics: a huge `attempt`, `factor` or `base` is capped at `max`, and a negative or
     /// non-finite result becomes zero.
@@ -228,6 +228,9 @@ where
 /// The factories run one after another, never at once; later ones run only after earlier ones
 /// fail. The list is a [`NonEmptyVec`], so an empty list fails to compile; TS dies at run time.
 ///
+/// Every factory in the list has one type. Mapping one closure over a list of inputs gives that
+/// (first example). For different effects, box them (second example).
+///
 /// # Examples
 ///
 /// ```
@@ -242,6 +245,20 @@ where
 /// let mirrors = nev!["a", "b", "c"];
 /// let result = first_success_of(mirrors.map(|&m| move || fetch(m))).await;
 /// assert_eq!(result, Ok("from b".to_string()));
+///
+/// // Different effects: box each factory and its future.
+/// use functype_core::non_empty_vec::NonEmptyVec;
+/// use functype_io::BoxIO;
+///
+/// async fn from_cache() -> Result<String, String> { Err("miss".into()) }
+/// async fn from_db() -> Result<String, String> { Ok("row".into()) }
+///
+/// type Factory = Box<dyn FnOnce() -> BoxIO<'static, String, String> + Send>;
+/// let sources: NonEmptyVec<Factory> = nev![
+///     Box::new(|| Box::pin(from_cache()) as BoxIO<'static, String, String>) as Factory,
+///     Box::new(|| Box::pin(from_db()) as BoxIO<'static, String, String>),
+/// ];
+/// assert_eq!(first_success_of(sources).await, Ok("row".to_string()));
 /// # });
 /// ```
 pub async fn first_success_of<A, E, F, Fut>(factories: NonEmptyVec<F>) -> Result<A, E>
@@ -490,5 +507,65 @@ mod tests {
         let make = |name: &'static str| move || async move { Err::<(), _>(name) };
         let r = first_success_of(nev![make("a"), make("b"), make("c")]).await;
         assert_eq!(r, Err("c"));
+    }
+
+    #[tokio::test]
+    async fn retry_while_skips_the_predicate_once_n_is_spent() {
+        let calls = Cell::new(0);
+        let checks = Cell::new(0);
+        let r = retry_while(
+            2,
+            None,
+            |_, _| {
+                checks.set(checks.get() + 1);
+                true
+            },
+            || failing_until(&calls, 99),
+        )
+        .await;
+        assert_eq!(r, Err("fail 3".to_string()));
+        assert_eq!(calls.get(), 3);
+        assert_eq!(checks.get(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_with_backoff_jitter_stays_within_the_schedule() {
+        let calls = Cell::new(0);
+        let start = Instant::now();
+        let policy = Backoff::new(3, Duration::from_millis(100));
+        let r = retry_with_backoff(policy, || failing_until(&calls, 99)).await;
+        assert!(r.is_err());
+        assert_eq!(calls.get(), 4);
+        let full = Duration::from_millis(100 + 200 + 400);
+        let elapsed = start.elapsed();
+        assert!(elapsed >= full / 2 && elapsed <= full, "{elapsed:?}");
+    }
+
+    #[tokio::test]
+    async fn first_success_of_single_item() {
+        let only = || async { Err::<(), _>("only") };
+        assert_eq!(first_success_of(nev![only]).await, Err("only"));
+    }
+
+    #[test]
+    fn helper_futures_are_send_when_their_inputs_are() {
+        fn assert_send<T: Send>(_: &T) {}
+        let factory = || async { Ok::<u32, String>(1) };
+        assert_send(&retry(1, factory));
+        assert_send(&retry_with_delay(1, Duration::ZERO, factory));
+        assert_send(&retry_while(1, None, |_, _| true, factory));
+        assert_send(&retry_with_backoff(Backoff::new(1, Duration::ZERO), factory));
+        assert_send(&retry_with_backoff_while(
+            Backoff::new(1, Duration::ZERO),
+            |_, _| true,
+            factory,
+        ));
+        assert_send(&first_success_of(nev![factory]));
+    }
+
+    #[test]
+    fn delay_for_zero_is_base() {
+        let p = Backoff::new(1, Duration::from_millis(100)).with_jitter(false);
+        assert_eq!(p.delay_for(0), p.delay_for(1));
     }
 }

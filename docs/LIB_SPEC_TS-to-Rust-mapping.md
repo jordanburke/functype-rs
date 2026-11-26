@@ -195,7 +195,7 @@ and `async fn` is what a Rust reader or an LLM writes by default.
 | `IO.forEach` (default: one at a time, `io/IO.ts:2654`) | `for x in items { out.push(f(x).await?) }` |
 | `all` / `forEach` with `{ concurrency: n }` | `stream::iter(items).map(f).buffered(n).try_collect().await`. Same result type, but which error comes back can differ: `try_collect` returns the lowest-index error once earlier items finish, while TS fails on the first failure in time and aborts the rest (`io/IO.ts:2013-2027`) |
 | `IO.race(effects)` (first to settle, success or failure; takes an array, `io/IO.ts:2632`) | `tokio::select!` for a fixed set; `futures::future::select_all` for a dynamic list |
-| `IO.firstSuccessOf` (runs in sequence; first success, else last failure, `io/IO.ts:2452-2457`) | functype-rs `first_success_of(nev![…])`. It takes a `NonEmptyVec`, so an empty list fails to compile; TS dies at run time |
+| `IO.firstSuccessOf` (runs in sequence; first success, else last failure, `io/IO.ts:2452-2457`) | functype-rs `first_success_of(nev![…])`. It takes a `NonEmptyVec`, so an empty list fails to compile; TS dies at run time. All factories share one type: map one closure over the inputs, or box different effects as `Box<dyn FnOnce() -> BoxIO<'static, A, E> + Send>` (mixing unboxed closures fails with E0308) |
 | `IO.sleep(ms)` / `delay(ms)` | `tokio::time::sleep` |
 | `timeout(ms)` | `tokio::time::timeout(d, fut).await` → `Result<Result<A, E>, Elapsed>`; map `Elapsed` into the error enum |
 | `timeoutTo(ms, b)` | `match timeout(d, fut).await { Ok(Ok(a)) => a, _ => b }`. TS returns `b` on a timeout **and on any failure or defect**: it is `this.timeout(ms).recover(fallback)` (`io/IO.ts:1081-1083`), and the async `Recover` replaces anything in the error channel, defects included (1619-1623), though its type says `IO<R, E, A \| B>`. Open TS question: bug or intended? If TS changes, this row becomes `timeout(d, fut).await.unwrap_or(Ok(b))` |
@@ -221,8 +221,11 @@ Only the gaps:
   `Interrupted` when `cancelled` finishes first, as TS `runExit({ signal })` does
   (`io/IO.ts:1035-1042`). `cancelled` is any future, such as `token.cancelled()` from
   `tokio_util::sync::CancellationToken`, so functype-rs doesn't depend on `tokio-util`. A dropped
-  future reports nothing, so the argument is required. As in TS, a success after cancellation
-  is still `Success`, a failure after it is `Interrupted`, and a defect stays `Die`.
+  future reports nothing, so the argument is required. As in TS, an already-done cancel stops
+  the effect before it starts. After that, Rust sees the cancel only between polls: a failure
+  on the wake-up that sees it is `Interrupted`, a success on that wake-up is kept, and a defect
+  stays `Die`. TS checks before every step, so a TS `io.map(f)` aborted mid-run reports
+  `Interrupted` where the Rust `async` block may run on to `Success`.
 - **Named policy helpers with TS defaults**, each taking its factory as the last argument:
   `retry`, `retry_with_delay`, `retry_while`, `retry_with_backoff`, `retry_with_backoff_while`
   (with the `Backoff` policy), `repeat_until`, `repeat_while`, `first_success_of`.
