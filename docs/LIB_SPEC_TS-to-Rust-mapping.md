@@ -390,16 +390,22 @@ and map into it explicitly. That is a design choice, not a mechanical translatio
 
 ### `Cond` and `Match`
 
+TS passes conditions and non-function values as plain arguments, so they are evaluated before
+the call, eagerly. Rust `if` / `match` evaluates only the branch taken. A side effect in an
+unchosen condition or value runs in TS and not in Rust. Function values (thunks) are lazy in
+both.
+
 | TS | Rust | Notes |
 |---|---|---|
-| `Cond.of<T>().when(c, v).elseWhen(c2, v2).else(v3)` | `if c { v } else if c2 { v2 } else { v3 }` | TS evaluates non-thunk values eagerly, so a side effect in an unchosen branch runs in TS and not in Rust. Pass thunks in TS, or check that branch values are pure |
-| `Cond.lazy<T>()` | `if` / `else if` / `else` | Rust branches are already lazy |
-| `Cond…orThrow()` | `else { unreachable!(…) }`, or return `Err` if TS caught it | TS throws `Error("Conditional expression has no matching condition")` |
-| `Match(v).case(p, r)…default(d)` | `match v { x if p(&x) => r, _ => d }` | First match wins in both |
+| `Cond.of<T>().when(c, v).elseWhen(c2, v2).else(v3)` | `if c { v } else if c2 { v2 } else { v3 }` | TS evaluates `c2`, `v` and `v2` even when `c` is true (`conditional/Cond.ts:62,70`) |
+| `Cond.lazy<T>()` | `if` / `else if` / `else` | Both lazy |
+| `Cond.match(value)({ a: …, b: … })` | `match` over an enum | `conditional/Cond.ts:147` |
+| `Cond…orThrow()` | `else { panic!("…") }`, or return `Err` if TS caught it | TS throws `Error("Conditional expression has no matching condition")` |
+| `Match(v).case(p, r)…default(d)` | `match v { x if p(&x) => r, _ => d }` | First match wins in both. TS evaluates every non-function `r` eagerly (`conditional/Match.ts:180,218,232`) |
 | `Match(v).caseValue(x, r)` / `caseValues([x, y], r)` | `x => r` / `x \| y => r` match arms | |
 | `Match(v).when(guard, r)` | a guard arm: `x if guard(&x) => r` | |
-| `Match(v)…exhaustive()` | a `match` with no `_` arm, over an enum | TS checks at run time and throws; Rust checks at compile time |
-| `Match(v)…orThrow(msg)` | `_ => unreachable!(msg)`, or `Err` if TS caught it | |
+| `Match(v)…exhaustive()` | a `match` with no `_` arm, over an enum | TS checks at run time and throws (`conditional/Match.ts:275-280`); Rust checks at compile time |
+| `Match(v)…orThrow(msg)` | `_ => panic!("{msg}")`, or `Err` if TS caught it | `unreachable!(msg)` with a non-literal `msg` fails to compile |
 | `Match(v)…toOption()` | a `match` that returns `Option` | |
 | `Match.exhaustive<Status, R>({ pending: …, … })(s)` | `enum Status` + `match s { Status::Pending => …, … }` | A TS string-literal union becomes an enum |
 | `Match.partial({…}).withDefault(f)(v)` | `match v { 200 => …, 404 => …, code => f(code) }` | |
@@ -407,15 +413,55 @@ and map into it explicitly. That is a design choice, not a mechanical translatio
 
 ### `Http`
 
-TS `Http.get/post/…(url, opts)` returns `IO<never, HttpError, HttpResponse<T>>` (`fetch/Http.ts:228-231`)
-and fails with `HttpStatusError` on any non-2xx status (`fetch/Http.ts:278`). The usual Rust
-target is `reqwest`:
+TS `Http.get/post/…(url, opts)` returns `IO<never, HttpError, HttpResponse<T>>`
+(`fetch/Http.ts:228-231`). The usual Rust target is `reqwest`, written out so each TS error case
+keeps its own variant:
 
-| TS | Rust (`reqwest`) | Notes |
+```rust
+#[derive(Debug, thiserror::Error)]
+enum HttpError {
+    #[error("network error: {0}")]
+    Network(#[source] reqwest::Error),
+    #[error("HTTP {status}")]
+    Status { status: reqwest::StatusCode, body: String },
+    #[error("decode error: {0}")]
+    Decode(#[source] reqwest::Error),
+}
+
+// TS: Http.get(url, { decode }) with HttpClientConfig.baseUrl
+async fn get_json<T: serde::de::DeserializeOwned>(
+    client: &reqwest::Client,
+    base_url: &str,
+    url: &str,
+) -> Result<T, HttpError> {
+    let resp = client.get(resolve_url(base_url, url)).send().await.map_err(HttpError::Network)?;
+    let status = resp.status();
+    if !status.is_success() {
+        // TS fails on any status outside 200-299 (`!response.ok`) and keeps the body.
+        let body = resp.text().await.unwrap_or_default();
+        return Err(HttpError::Status { status, body });
+    }
+    resp.json::<T>().await.map_err(HttpError::Decode)
+}
+
+// TS resolveUrl concatenates (`fetch/Http.ts:20-26`).
+fn resolve_url(base: &str, url: &str) -> String {
+    if base.is_empty() || url.starts_with("http://") || url.starts_with("https://") {
+        return url.to_string();
+    }
+    let base = base.strip_suffix('/').unwrap_or(base);
+    if url.starts_with('/') { format!("{base}{url}") } else { format!("{base}/{url}") }
+}
+```
+
+| TS | Rust | Notes |
 |---|---|---|
-| `Http.get(url, { decode })` | `client.get(url).send().await?.error_for_status()?.json::<T>().await?` | `error_for_status()` gives TS's non-2xx failure; without it, `reqwest` treats every status as success |
-| `HttpClientConfig.baseUrl` / `defaultHeaders` | build a `reqwest::Client` once, with default headers, and join URLs against a base `Url` | |
-| `NetworkError \| HttpStatusError \| DecodeError` | an `HttpError` enum with one variant each | `HttpStatusError` carries `status` and `body`; read the body before `error_for_status()` consumes the response if you need it |
+| `Http.get(url, { decode })` | `get_json` above | **Not `error_for_status()`**: it errors only on 4xx/5xx, so a 304 (or a 3xx with redirects off) decodes instead of failing as TS does (`fetch/Http.ts:278`). It also consumes the response, so the body is lost. And a single `#[from] reqwest::Error` would merge network, status and decode failures into one variant |
+| `HttpClientConfig.baseUrl` | `resolve_url` above | **Not `Url::join`**: joining `/users` onto `https://api.x/v1` gives `https://api.x/users`, where TS gives `/v1/users` |
+| `HttpClientConfig.defaultHeaders` | `reqwest::Client::builder().default_headers(…)` | |
+| `NetworkError \| HttpStatusError \| DecodeError` | the `HttpError` enum above | |
+| parse by content type | check `resp.headers()` before `.json()` | TS parses JSON only when the content type includes `application/json`, and returns text for `text/*` (`fetch/Http.ts:170-175`); `.json()` ignores the content type |
+| `HttpResponse { data, status, headers }` | read `resp.status()` / `resp.headers()` before consuming the body | |
 | `retryWithBackoff`, `timeout` on the IO | functype-io `retry_with_backoff` around a factory; `tokio::time::timeout` | See IO |
 | `signal` | drop the future, or `select!` on a cancellation token | |
 
@@ -427,22 +473,23 @@ target is `serde::Deserialize` plus `serde_json::from_value` / `from_str`.
 | TS | Rust (`serde`) | Notes |
 |---|---|---|
 | `Decoder.object({ a, b })` | `#[derive(Deserialize)] struct { a, b }` | **TS collects every failing field into one `Composite` error; serde stops at the first.** Code that reports all field errors needs `Validated` over per-field results, not plain serde |
-| `Decoder.list(inner)` / `array` / `map` | `Vec<T>` / `HashMap<String, T>` fields | Same first-error difference |
-| `Decoder.string` / `number` / `boolean` | `String` / `f64` (or an integer type) / `bool` | TS `number` is `f64`; pick an integer type only if the data is integral |
-| `Decoder.option(inner)` (null → None) | `Option<T>` | serde also maps a **missing** field to `None` |
-| `Decoder.nullable(inner)` | `Option<T>` | |
-| `Decoder.either.envelope({ ok, err })` | `#[serde(rename_all = "lowercase")] enum Envelope<R, L> { Ok(R), Err(L) }` | TS takes `ok` first when both keys exist; serde's externally tagged enum rejects an object with both |
+| `Decoder.list(inner)` / `array` | `Vec<T>` | Same first-error difference |
+| `Decoder.map(inner)` | `IndexMap<String, T>` (indexmap's `serde` feature) | Keeps key order, as the type map requires; `HashMap` would not. Same first-error difference |
+| `Decoder.string` / `number` / `boolean` | `String` / `f64` (or an integer type) / `bool` | TS `number` is `f64`. An integer type rejects `1.0`, which TS accepts |
+| `Decoder.option(inner)` / `nullable(inner)` | `Option<T>` | Both sides read `null` and a missing key as `None` |
+| `Decoder.either.envelope({ ok, err })` | `#[serde(rename_all = "lowercase")] enum Envelope<R, L> { Ok(R), Err(L) }` | serde's externally tagged enum rejects **any** extra key (`{"ok": 1, "meta": "x"}` fails). TS ignores extra keys and takes `ok` first when both exist |
 | `Decoder.either.discriminated({ tag, leftTag, rightTag }, l, r)` | `#[serde(tag = "<tag>")]` enum with `#[serde(rename = "<leftTag>")]` / `"<rightTag>"` variants | |
 | `Decoder.fromThrowing(zod.parse)` | a `Deserialize` type, or `TryFrom` after deserializing | |
-| `DecoderError { path, message }` | `serde_json::Error` (line/column, not a field path) | For field paths, add `serde_path_to_error` |
+| `DecoderError` (`Leaf { path, message }` / `Composite { path, children }`) | `serde_json::Error` (line and column, one error) | For field paths, add `serde_path_to_error` |
 
 ### Serialization (`toJSON`)
 
-TS functype types serialize as `{ "@functype": "<Type>", "_tag": "<Variant>", "value": … }`, for
-example `Option.toJSON()` (`option/Option.ts:195`) and `Either.toJSON()` (`either/Either.ts:139`).
-Plain serde does not produce that shape: `Option<T>` serializes as the value or `null`, and
-`Result` as `{"Ok": …}`. Code that exchanges functype JSON with a TS service needs a serde adapter
-for this envelope. functype-rs does not ship one yet; until it does, translate such payloads
+TS functype types serialize with an `"@functype"` marker and a `_tag`, for example
+`{ "@functype": "Option", "_tag": "Some", "value": … }` (`option/Option.ts:195`) and the same for
+`Either` (`either/Either.ts:139`). The fields differ by type: a `Try` failure carries `error`, not
+`value` (`try/Try.ts:142`). Plain serde does not produce this shape: `Option<T>` serializes as the
+value or `null`, and `Result` as `{"Ok": …}`. Code that exchanges functype JSON with a TS service
+needs a serde adapter. functype-rs does not ship one yet; until it does, translate such payloads
 with explicit wire structs.
 
 ## Trim what std covers
