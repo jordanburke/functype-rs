@@ -315,7 +315,7 @@ Done:
 - `OptionExt` keeps only what std lacks: `to_either`, `to_validated`, `to_non_empty_vec` and
   `tap_none`, all taking `self` by value, so none clones. `get_or_else`, `or_else_lazy`, `fold`,
   `tap_some`, `contains_where`, `zip_with` and the free fn `when` are removed; their std forms are
-  `unwrap_or_else`, `or_else`, `map_or_else`, `inspect`, `is_some_and`, `a.zip(b).map(f)` and
+  `unwrap_or_else`, `or_else`, `map_or_else`, `inspect`, `is_some_and`, `a.zip(b).map(|(a, b)| f(a, b))` and
   `cond.then(f)`.
 - `ResultExt` keeps `to_either`, `to_validated` and `swap`. `get_or_else`, `fold`, `tap_ok`,
   `tap_err`, `recover`, `recover_with` and `bimap` are removed.
@@ -336,5 +336,5 @@ Keep: `fdo!` and `Pure` (they back the `Do` mapping), `Validated`, `NonEmptyVec`
 
 1. Ask on the TS side whether `timeoutTo` recovering every failure is intended.
 2. Write the error-enum convention, with a worked `catchTag` rewrite.
-3. Decide whether `functype_core::Either` and the persistent collections stay.
+3. Revisit `functype_core::Either` and the persistent collections if translated code never uses them.
 4. Map the remaining modules: `Match`/`Cond`, `Http`, `Decoder`, serialization.

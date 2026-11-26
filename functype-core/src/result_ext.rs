@@ -5,7 +5,7 @@ use crate::validated::Validated;
 ///
 /// Everything else maps to std; see the mapping doc. TS `getOrElse` → `unwrap_or_else`,
 /// `fold` → `map_or_else`, `tap`/`tapLeft` → `inspect`/`inspect_err`, `recover` →
-/// `unwrap_or_else` or `or_else(|e| Ok(f(e)))`, `recoverWith` → `or_else`, and
+/// `or_else(|e| Ok(f(e)))`, `recoverWith` → `or_else`, and
 /// `bimap(fl, fr)` → `.map_err(fl).map(fr)`.
 pub trait ResultExt<T, E> {
     /// Converts to `Either<E, T>`.

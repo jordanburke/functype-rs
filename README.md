@@ -180,7 +180,7 @@ Adds the conversions std lacks to `Option` and `Result`.
 
 **ResultExt**: `to_either`, `to_validated`, `swap`
 
-Only conversions std lacks. For the rest, use std: `unwrap_or_else`, `map_or_else`, `inspect`/`inspect_err`, `is_some_and`, `or_else`, `bool::then`.
+For the rest, use std: `unwrap_or_else`, `map_or_else`, `inspect`/`inspect_err`, `is_some_and`, `or_else`, `bool::then`.
 
 **TupleExt**: `map_n` for 2- through 5-tuples
 

@@ -5,8 +5,9 @@ use crate::validated::Validated;
 /// Conversions from `Option<T>` that std lacks.
 ///
 /// Everything else maps to std; see the mapping doc. TS `getOrElse` → `unwrap_or_else`,
-/// `orElse` → `or_else`, `fold` → `map_or_else`, `tap` → `inspect`, a predicate check →
-/// `is_some_and`, `zip` + `map` → `a.zip(b).map(f)`, and a conditional `Some` → `cond.then(f)`.
+/// `orElse` → `or_else`, `fold` → `map_or_else`. The removed functype-rs methods map as:
+/// `tap_some` → `inspect`, `contains_where` → `is_some_and`, `zip_with(&b, f)` →
+/// `a.zip(b).map(|(a, b)| f(a, b))`, and `when(cond, f)` → `cond.then(f)`.
 pub trait OptionExt<T> {
     /// Converts to `Either<L, T>`, using `left_value` for `None`.
     fn to_either<L, F: FnOnce() -> L>(self, left_value: F) -> Either<L, T>;
