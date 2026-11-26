@@ -1,6 +1,6 @@
 # TS functype → Rust mapping
 
-Status: revised 2026-11-26. IO decided: `async fn`, with the helpers in `functype-io`.
+Status: revised 2026-11-26. IO decided: `async fn`, with the helpers in `functype-io`. Errors and the remaining modules mapped.
 Compared: TS `functype` 2.2.1 (`~/IdeaProjects/functype`, `main`) against `functype-rs` 0.1.1 (`main`).
 
 ## Goal
@@ -59,7 +59,8 @@ stable by then (`inspect`/`inspect_err` 1.76, `LazyLock` 1.80), and indexmap 2.1
 | `IO<R, E, A>` | `async fn -> Result<A, E>` | See IO |
 | `Exit<E, A>` | **functype-rs `Exit`** + `run_exit` | `fold`/`match` → Rust `match`; `mapError` → `map_err`; `flatMap` → `and_then`; `toOption` → `ok()`; `getOrElse` → `unwrap_or_else` |
 | `Context` / `Tag` / `Layer` | plain arguments, see Services | |
-| `Match` / `Cond`, `Http`, `Decoder`, serialization, `Obj` | **not mapped yet** | Rust has `match`, `reqwest`, `serde`; mapping each is follow-up work |
+| `Match` / `Cond`, `Http`, `Decoder`, serialization | `match` / `if`, `reqwest`, `serde` | See Other modules |
+| `Obj` | **not mapped yet** | |
 
 ## Method map (Option, Either, Try)
 
@@ -309,6 +310,141 @@ The mapping:
 Decision: **keep Rust's shape.** Map `FormValidation<T>` → `Result<T, NonEmptyVec<E>>`, built
 with `Validated`. Whether TS should gain `Validated` is a TS decision, outside this doc.
 
+## Errors
+
+TS error channels are unions of tagged objects (`NotFound | Timeout`), and they widen as
+effects chain. Rust has no union types. The convention:
+
+- **One error enum per module**, one variant per TS `_tag`. Derive `Debug` and
+  `thiserror::Error`.
+- **Widen with `From`, never narrow.** Where TS gets `E | E2`, the caller's enum wraps each
+  source with `#[from]`, and `?` converts. An enum can't lose a variant, so a handled case stays
+  in the type.
+- **`catchTag` is a manual rewrite**: a `match` that handles one variant and passes the rest
+  through. The result type is still the whole enum.
+- **Throws that TS recovers become `Err`**, never panics (see Traps).
+
+Worked example. TS:
+
+```ts
+type NotFound = { _tag: "NotFound"; id: string }
+type Timeout = { _tag: "Timeout"; ms: number }
+
+const getUser = (id: string): IO<never, NotFound | Timeout, User> => …
+
+// catchTag narrows the error to Timeout
+const getUserOrGuest = (id: string) => getUser(id).catchTag("NotFound", () => IO.succeed(User.guest()))
+```
+
+Rust:
+
+```rust
+#[derive(Debug, PartialEq, thiserror::Error)]
+enum UserError {
+    #[error("user {0} not found")]
+    NotFound(String),
+    #[error("timed out after {0:?}")]
+    Timeout(Duration),
+}
+
+async fn get_user(id: &str) -> Result<User, UserError> { … }
+
+// catchTag("NotFound", …): handle one variant, pass the rest through.
+// The type stays Result<User, UserError>; NotFound is no longer produced, but the type can't say so.
+async fn get_user_or_guest(id: &str) -> Result<User, UserError> {
+    match get_user(id).await {
+        Err(UserError::NotFound(_)) => Ok(User::guest()),
+        other => other,
+    }
+}
+
+// Widening: TS `UserError | ConfigError` becomes one enum with From for each source.
+#[derive(Debug, thiserror::Error)]
+enum AppError {
+    #[error(transparent)]
+    User(#[from] UserError),
+    #[error("bad config: {0}")]
+    Config(String),
+}
+
+async fn greet(id: &str) -> Result<String, AppError> {
+    let user = get_user_or_guest(id).await?; // UserError -> AppError via From
+    Ok(format!("hi {}", user.name))
+}
+```
+
+When a caller really needs the narrowed type, write a second enum without the handled variant
+and map into it explicitly. That is a design choice, not a mechanical translation.
+
+| TS | Rust |
+|---|---|
+| `IO.fail(e)` with a tagged `e` | `Err(ModuleError::Variant(..))` |
+| `catchTag(tag, f)` | `match` on that variant; the rest pass through |
+| `catchAll(f)` / `recoverWith(f)` | `match` / `or_else` on the whole `Result` |
+| `mapError(f)` | `map_err(f)` |
+| `E \| E2` from `flatMap` | a caller enum with `#[from]` variants, and `?` |
+| `TypedError<Code>` | an enum variant per code, holding the TS `context` fields |
+| `RepeatExhausted` / `TimeoutError` / `InterruptedError` in `E` | a variant of the module enum; `From<RepeatError<E, A>>` or `From<tokio::time::error::Elapsed>` where useful |
+
+## Other modules
+
+### `Cond` and `Match`
+
+| TS | Rust | Notes |
+|---|---|---|
+| `Cond.of<T>().when(c, v).elseWhen(c2, v2).else(v3)` | `if c { v } else if c2 { v2 } else { v3 }` | TS evaluates non-thunk values eagerly, so a side effect in an unchosen branch runs in TS and not in Rust. Pass thunks in TS, or check that branch values are pure |
+| `Cond.lazy<T>()` | `if` / `else if` / `else` | Rust branches are already lazy |
+| `Cond…orThrow()` | `else { unreachable!(…) }`, or return `Err` if TS caught it | TS throws `Error("Conditional expression has no matching condition")` |
+| `Match(v).case(p, r)…default(d)` | `match v { x if p(&x) => r, _ => d }` | First match wins in both |
+| `Match(v).caseValue(x, r)` / `caseValues([x, y], r)` | `x => r` / `x \| y => r` match arms | |
+| `Match(v).when(guard, r)` | a guard arm: `x if guard(&x) => r` | |
+| `Match(v)…exhaustive()` | a `match` with no `_` arm, over an enum | TS checks at run time and throws; Rust checks at compile time |
+| `Match(v)…orThrow(msg)` | `_ => unreachable!(msg)`, or `Err` if TS caught it | |
+| `Match(v)…toOption()` | a `match` that returns `Option` | |
+| `Match.exhaustive<Status, R>({ pending: …, … })(s)` | `enum Status` + `match s { Status::Pending => …, … }` | A TS string-literal union becomes an enum |
+| `Match.partial({…}).withDefault(f)(v)` | `match v { 200 => …, 404 => …, code => f(code) }` | |
+| `Match.withGuards([[p, r], …]).withDefault(d)(v)` | guard arms in order, then `_ => d` | |
+
+### `Http`
+
+TS `Http.get/post/…(url, opts)` returns `IO<never, HttpError, HttpResponse<T>>` (`fetch/Http.ts:228-231`)
+and fails with `HttpStatusError` on any non-2xx status (`fetch/Http.ts:278`). The usual Rust
+target is `reqwest`:
+
+| TS | Rust (`reqwest`) | Notes |
+|---|---|---|
+| `Http.get(url, { decode })` | `client.get(url).send().await?.error_for_status()?.json::<T>().await?` | `error_for_status()` gives TS's non-2xx failure; without it, `reqwest` treats every status as success |
+| `HttpClientConfig.baseUrl` / `defaultHeaders` | build a `reqwest::Client` once, with default headers, and join URLs against a base `Url` | |
+| `NetworkError \| HttpStatusError \| DecodeError` | an `HttpError` enum with one variant each | `HttpStatusError` carries `status` and `body`; read the body before `error_for_status()` consumes the response if you need it |
+| `retryWithBackoff`, `timeout` on the IO | functype-io `retry_with_backoff` around a factory; `tokio::time::timeout` | See IO |
+| `signal` | drop the future, or `select!` on a cancellation token | |
+
+### `Decoder`
+
+TS `Decoder<A>` is `(raw: unknown) => Either<DecoderError, A>` (`decoder/Decoder.ts:17`). The Rust
+target is `serde::Deserialize` plus `serde_json::from_value` / `from_str`.
+
+| TS | Rust (`serde`) | Notes |
+|---|---|---|
+| `Decoder.object({ a, b })` | `#[derive(Deserialize)] struct { a, b }` | **TS collects every failing field into one `Composite` error; serde stops at the first.** Code that reports all field errors needs `Validated` over per-field results, not plain serde |
+| `Decoder.list(inner)` / `array` / `map` | `Vec<T>` / `HashMap<String, T>` fields | Same first-error difference |
+| `Decoder.string` / `number` / `boolean` | `String` / `f64` (or an integer type) / `bool` | TS `number` is `f64`; pick an integer type only if the data is integral |
+| `Decoder.option(inner)` (null → None) | `Option<T>` | serde also maps a **missing** field to `None` |
+| `Decoder.nullable(inner)` | `Option<T>` | |
+| `Decoder.either.envelope({ ok, err })` | `#[serde(rename_all = "lowercase")] enum Envelope<R, L> { Ok(R), Err(L) }` | TS takes `ok` first when both keys exist; serde's externally tagged enum rejects an object with both |
+| `Decoder.either.discriminated({ tag, leftTag, rightTag }, l, r)` | `#[serde(tag = "<tag>")]` enum with `#[serde(rename = "<leftTag>")]` / `"<rightTag>"` variants | |
+| `Decoder.fromThrowing(zod.parse)` | a `Deserialize` type, or `TryFrom` after deserializing | |
+| `DecoderError { path, message }` | `serde_json::Error` (line/column, not a field path) | For field paths, add `serde_path_to_error` |
+
+### Serialization (`toJSON`)
+
+TS functype types serialize as `{ "@functype": "<Type>", "_tag": "<Variant>", "value": … }`, for
+example `Option.toJSON()` (`option/Option.ts:195`) and `Either.toJSON()` (`either/Either.ts:139`).
+Plain serde does not produce that shape: `Option<T>` serializes as the value or `null`, and
+`Result` as `{"Ok": …}`. Code that exchanges functype JSON with a TS service needs a serde adapter
+for this envelope. functype-rs does not ship one yet; until it does, translate such payloads
+with explicit wire structs.
+
 ## Trim what std covers
 
 Done:
@@ -335,6 +471,6 @@ Keep: `fdo!` and `Pure` (they back the `Do` mapping), `Validated`, `NonEmptyVec`
 ## Next steps
 
 1. Ask on the TS side whether `timeoutTo` recovering every failure is intended.
-2. Write the error-enum convention, with a worked `catchTag` rewrite.
-3. Revisit `functype_core::Either` and the persistent collections if translated code never uses them.
-4. Map the remaining modules: `Match`/`Cond`, `Http`, `Decoder`, serialization.
+2. Revisit `functype_core::Either` and the persistent collections if translated code never uses them.
+3. A serde adapter for functype's `{ "@functype", "_tag", "value" }` JSON, for services that talk to TS.
+4. Map `Obj`.
