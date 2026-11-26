@@ -404,7 +404,7 @@ both.
 | `Match(v).case(p, r)…default(d)` | `match v { x if p(&x) => r, _ => d }` | First match wins in both. TS evaluates every non-function `r` eagerly (`conditional/Match.ts:180,218,232`) |
 | `Match(v).caseValue(x, r)` / `caseValues([x, y], r)` | `x => r` / `x \| y => r` match arms | |
 | `Match(v).when(guard, r)` | a guard arm: `x if guard(&x) => r` | |
-| `Match(v)…exhaustive()` | a `match` with no `_` arm, over an enum | TS checks at run time and throws (`conditional/Match.ts:275-280`); Rust checks at compile time |
+| `Match(v)…exhaustive()` | a `match` with no `_` arm, over an enum | TS checks at run time and throws (`conditional/Match.ts:275-282`); Rust checks at compile time |
 | `Match(v)…orThrow(msg)` | `_ => panic!("{msg}")`, or `Err` if TS caught it | `unreachable!(msg)` with a non-literal `msg` fails to compile |
 | `Match(v)…toOption()` | a `match` that returns `Option` | |
 | `Match.exhaustive<Status, R>({ pending: …, … })(s)` | `enum Status` + `match s { Status::Pending => …, … }` | A TS string-literal union becomes an enum |
@@ -441,7 +441,9 @@ async fn get_json<T: serde::de::DeserializeOwned>(
         let body = resp.text().await.unwrap_or_default();
         return Err(HttpError::Status { status, body });
     }
-    resp.json::<T>().await.map_err(HttpError::Decode)
+    // `json()` reads the body, then parses. TS reports a failed read as a NetworkError and only a
+    // parse failure as a DecodeError (`fetch/Http.ts:292-296`).
+    resp.json::<T>().await.map_err(|e| if e.is_decode() { HttpError::Decode(e) } else { HttpError::Network(e) })
 }
 
 // TS resolveUrl concatenates (`fetch/Http.ts:20-26`).
