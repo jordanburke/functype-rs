@@ -17,8 +17,8 @@ Part of the [functype](https://crates.io/crates/functype) library.
 
 ## Extension Traits
 
-- **OptionExt** — `get_or_else`, `fold`, `to_either`, `to_validated`, `tap_some`, `tap_none`, `when`, `contains_where`, `zip_with`
-- **ResultExt** — `get_or_else`, `fold`, `to_either`, `to_validated`, `tap_ok`, `tap_err`, `bimap`, `recover`, `swap`
+- **OptionExt** — `to_either`, `to_validated`, `to_non_empty_vec`, `tap_none` (the rest is std)
+- **ResultExt** — `to_either`, `to_validated`, `swap` (the rest is std)
 - **TupleExt** — `map_n` for 2- through 5-tuples
 
 ## Usage

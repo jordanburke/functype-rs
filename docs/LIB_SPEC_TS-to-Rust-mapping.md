@@ -27,8 +27,9 @@ names grafted onto types Rust already has.
 5. **No alias layer.** Don't add `get_or_else` and friends onto std `Option`/`Result` just to
    match TS names. It gives every operation two names. Put the name map in this doc instead.
 
-MSRV note: the workspace declares `rust-version = "1.85"`, the MSRV of `tokio`, which
-functype-io depends on. CI checks the libraries on 1.85. Every std method this doc maps to is
+MSRV note: the workspace declares `rust-version = "1.85"`, the MSRV of `tokio` and `rpds`. It
+uses `resolver = "3"`, so Cargo picks dependency versions that fit, and CI runs the tests on
+1.85. Every std method this doc maps to is
 stable by then (`inspect`/`inspect_err` 1.76, `LazyLock` 1.80), and indexmap 2.14 also needs
 1.85. Check the MSRV of `backon`, `tokio-util` and `futures-util` before adding them.
 
@@ -80,7 +81,7 @@ stable by then (`inspect`/`inspect_err` 1.76, `LazyLock` 1.80), and indexmap 2.1
 | `tap` (Either only) | `inspect` (std 1.76) | TS `Option` and `Try` have no `tap` |
 | `tapLeft` | `inspect_err` (std 1.76) | |
 | `swap` | no std method; `functype_core::ResultExt::swap` | |
-| `bimap(fl, fr)` | `.map_err(fl).map(fr)` | **Not `ResultExt::bimap`**, which takes `(on_ok, on_err)`. See Traps |
+| `bimap(fl, fr)` | `.map_err(fl).map(fr)` | functype-rs has no `Result` `bimap`; `functype_core::Either::bimap` keeps the TS order `(on_left, on_right)` |
 | `filterOrElse(p, e)` | `and_then(\|v\| if p(&v) { Ok(v) } else { Err(e(v)) })` | |
 | `recover(f)` (Try) | `or_else(\|e\| Ok(f(e)))`, or `or_else(f)` when `f` can fail | TS `recover` returns `Try<T \| U>` (`try/Try.ts:118`) and runs `f` inside `Try` (337-339), so a throwing `f` becomes `Failure`. Not `unwrap_or_else` |
 | `recoverWith(f)` (Try) | `or_else(f)` | |
@@ -126,9 +127,9 @@ Each of these compiles and changes meaning, except the last, which is a rule to 
   enclosing fn. When the return types happen to match, it compiles and skips the rest of the fn.
   Use `fdo!`, or put the `?` chain in its own helper fn or an immediately-called closure.
 - **`bimap` argument order.** TS `bimap(fl, fr)` is left first (`either/Either.ts:107`).
-  `ResultExt::bimap` is `(on_ok, on_err)` (`functype-core/src/result_ext.rs:27`). With same-typed
-  sides it compiles and swaps. Translate to `.map_err(fl).map(fr)` only. (`ResultExt::bimap`
-  should be reordered or removed; see Trim.)
+  Translate it to `.map_err(fl).map(fr)`, which names each side. (functype-rs used to have a
+  `ResultExt::bimap(on_ok, on_err)` that compiled with same-typed sides and swapped them; it is
+  removed.)
 - **TS IO recovery also catches defects; Rust `match Err` doesn't.** In TS the error channel
   holds `Die` as well as `Failure` (`io/IO.ts:1131-1135`), and `Recover`, `RecoverWith` and
   `MapError` branch on it (`io/IO.ts:1611-1630`). So a throw inside `IO.sync` is recovered or
@@ -310,15 +311,22 @@ with `Validated`. Whether TS should gain `Validated` is a TS decision, outside t
 
 ## Trim what std covers
 
-Since translated code goes to std, these should be slimmed or removed:
-- `functype_core::Either` duplicates `Result`. Keep it only if a non-error two-way value is
-  needed; the `either` crate also exists.
-- `OptionExt` methods that rename std (`get_or_else`, `or_else_lazy`, `fold`, `tap_*`). Several
-  take `&self` with `T: Clone`, so they clone where std moves.
-- `ResultExt` methods with std equivalents (`get_or_else`, `tap_ok`, `tap_err`, `recover`).
-  `ResultExt::bimap` must be reordered to `(on_err, on_ok)` or removed (see Traps).
+Done:
+- `OptionExt` keeps only what std lacks: `to_either`, `to_validated`, `to_non_empty_vec` and
+  `tap_none`, all taking `self` by value, so none clones. `get_or_else`, `or_else_lazy`, `fold`,
+  `tap_some`, `contains_where`, `zip_with` and the free fn `when` are removed; their std forms are
+  `unwrap_or_else`, `or_else`, `map_or_else`, `inspect`, `is_some_and`, `a.zip(b).map(|(a, b)| f(a, b))` and
+  `cond.then(f)`.
+- `ResultExt` keeps `to_either`, `to_validated` and `swap`. `get_or_else`, `fold`, `tap_ok`,
+  `tap_err`, `recover`, `recover_with` and `bimap` are removed.
+
+Left as they are, outside this mapping:
+- `functype_core::Either` stays as a non-error two-way value. Translated TS `Either` code still
+  goes to `Result`.
+- `TryExt` on `functype_core::Try` keeps its own names (`get_or_else`, `recover`, …), because
+  `Try` holds a caught panic, not a TS `Try`.
 - Persistent `List`/`Map` (on `rpds`): TS lists "no persistent data structures" as a non-goal
-  (`docs/ROADMAP.md`, line 61). If they stay, they are Rust-only and outside this mapping.
+  (`docs/ROADMAP.md`, line 61). They are Rust-only.
 
 Keep: `fdo!` and `Pure` (they back the `Do` mapping), `Validated`, `NonEmptyVec`,
 `functype_core::Try` (for the TS sites that relied on catching a crash), and `ResultExt::swap`
@@ -328,5 +336,5 @@ Keep: `fdo!` and `Pure` (they back the `Do` mapping), `Validated`, `NonEmptyVec`
 
 1. Ask on the TS side whether `timeoutTo` recovering every failure is intended.
 2. Write the error-enum convention, with a worked `catchTag` rewrite.
-3. Trim the std duplicates and fix `ResultExt::bimap`.
+3. Revisit `functype_core::Either` and the persistent collections if translated code never uses them.
 4. Map the remaining modules: `Match`/`Cond`, `Http`, `Decoder`, serialization.
