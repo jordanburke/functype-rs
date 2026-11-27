@@ -104,7 +104,17 @@ impl<T> NonEmptyVec<T> {
     }
 
     /// Applies a function to each element, returning a new `NonEmptyVec`.
-    pub fn map<U, F: Fn(&T) -> U>(&self, f: F) -> NonEmptyVec<U> {
+    ///
+    /// The results may borrow from `self`, like `Iterator::map` over `iter()`:
+    ///
+    /// ```
+    /// use functype_core::nev;
+    ///
+    /// let names = nev!["a".to_string(), "b".to_string()];
+    /// let lens = names.map(|s| s.as_str());
+    /// assert_eq!(*lens.head(), "a");
+    /// ```
+    pub fn map<'a, U, F: FnMut(&'a T) -> U>(&'a self, mut f: F) -> NonEmptyVec<U> {
         NonEmptyVec {
             head: f(&self.head),
             tail: self.tail.iter().map(f).collect(),
@@ -112,7 +122,7 @@ impl<T> NonEmptyVec<T> {
     }
 
     /// Applies a function that returns a `NonEmptyVec` to each element, then flattens.
-    pub fn flat_map<U, F: Fn(&T) -> NonEmptyVec<U>>(&self, f: F) -> NonEmptyVec<U> {
+    pub fn flat_map<'a, U, F: FnMut(&'a T) -> NonEmptyVec<U>>(&'a self, mut f: F) -> NonEmptyVec<U> {
         let first = f(&self.head);
         let mut result_tail = first.tail;
         for item in &self.tail {
@@ -612,5 +622,26 @@ mod proptest_tests {
             let vec = v.to_vec();
             prop_assert_eq!(v.last(), &vec[vec.len() - 1]);
         }
+    }
+
+    #[test]
+    fn map_results_can_borrow_from_the_vec() {
+        let v = NonEmptyVec::of("a".to_string(), vec!["bc".to_string()]);
+        let borrowed: NonEmptyVec<&str> = v.map(|s| s.as_str());
+        assert_eq!(borrowed.into_vec(), vec!["a", "bc"]);
+        let closures = v.map(|s| move || s.len());
+        assert_eq!(closures.into_vec().into_iter().map(|f| f()).collect::<Vec<_>>(), vec![1, 2]);
+    }
+
+    #[test]
+    fn map_accepts_fn_mut() {
+        let v = NonEmptyVec::of(1, vec![2, 3]);
+        let mut seen = 0;
+        let doubled = v.map(|x| {
+            seen += 1;
+            x * 2
+        });
+        assert_eq!(doubled.into_vec(), vec![2, 4, 6]);
+        assert_eq!(seen, 3);
     }
 }
