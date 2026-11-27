@@ -62,6 +62,20 @@ fn positive_int(v: &Value, path: &str) -> Field<usize> {
     })
 }
 
+/// TS `timerMs`: a positive integer no larger than Node's timer limit, 2^31 - 1 ms. Tokio has no
+/// such limit, but TS would fire a larger deadline after 1 ms, so both sides reject it.
+const MAX_TIMER_MS: usize = 2_147_483_647;
+
+fn timer_ms(v: &Value, path: &str) -> Field<usize> {
+    positive_int(v, path).and_then(|n| {
+        if n <= MAX_TIMER_MS {
+            Validated::valid(n)
+        } else {
+            Validated::invalid(path.to_string())
+        }
+    })
+}
+
 /// TS `Decoder.option(inner)`: `null` or a missing key is `None`.
 fn option<A>(v: &Value, inner: impl FnOnce(&Value) -> Field<A>) -> Field<Option<A>> {
     if v.is_null() {
@@ -128,7 +142,7 @@ pub fn decode_config(raw: &Value) -> Result<Config, Vec<String>> {
         ),
         None => Validated::invalid("endpoints".to_string()),
     };
-    let deadline = option(get(obj, "deadlineMs"), |v| positive_int(v, "deadlineMs"));
+    let deadline = option(get(obj, "deadlineMs"), |v| timer_ms(v, "deadlineMs"));
     endpoints
         .zip(&deadline)
         .map(|(endpoints, deadline_ms)| Config { endpoints, deadline_ms })

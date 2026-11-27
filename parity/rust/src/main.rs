@@ -103,8 +103,9 @@ async fn main() -> ExitCode {
         Err(config_errors) => print(&Report::Invalid { config_errors }, EXIT_INVALID_CONFIG),
         Ok(config) => {
             let http = Http::new(&args.base_url);
-            let http = &http; // `async move` below captures the reference, not the client
-                              // TS `AbortSignal.timeout(ms)`: one deadline for the whole run.
+            // `async move` below captures the reference, not the client.
+            let http = &http;
+            // TS `AbortSignal.timeout(ms)`: one deadline for the whole run.
             let deadline = config
                 .deadline_ms
                 .map(|ms| Instant::now() + Duration::from_millis(ms as u64));

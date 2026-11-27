@@ -32,6 +32,16 @@ const positiveInt: Decoder<number> = (raw) =>
     n > 0 ? Right<DecoderError, number>(n) : Left<DecoderError, number>(DecoderError.leaf([], "expected at least 1")),
   )
 
+/** Node timers top out at 2^31 - 1 ms; a larger value fires after 1 ms, or throws past 2^32. */
+const MAX_TIMER_MS = 2_147_483_647
+
+const timerMs: Decoder<number> = (raw) =>
+  positiveInt(raw).flatMap((n) =>
+    n <= MAX_TIMER_MS
+      ? Right<DecoderError, number>(n)
+      : Left<DecoderError, number>(DecoderError.leaf([], `expected at most ${MAX_TIMER_MS}`)),
+  )
+
 const nonEmptyArray =
   <A>(inner: Decoder<A>): Decoder<readonly A[]> =>
   (raw) =>
@@ -52,7 +62,7 @@ const endpoint: Decoder<Endpoint> = (raw) =>
 
 const config: Decoder<Config> = Decoder.object({
   endpoints: Decoder.array(endpoint),
-  deadlineMs: Decoder.option(positiveInt),
+  deadlineMs: Decoder.option(timerMs),
 })
 
 /** Renders a decoder path as `endpoints[1].name`, the format `DecoderError.format` uses. */

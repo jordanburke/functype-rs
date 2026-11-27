@@ -108,6 +108,11 @@ repo's crates, or noted for the library it belongs to.
   on both sides, and crashes there.
 - **`runExit({ signal: AbortSignal.timeout(ms) })`** maps to `run_exit` with one shared
   `sleep_until(deadline)`, and an effect that can't fail goes in as `Ok::<_, Infallible>`.
+- **Node timers top out at 2147483647 ms.** A larger `AbortSignal.timeout` fires after 1 ms, and
+  one past 2^32 throws; tokio sleeps as asked. Both apps reject a `deadlineMs` over the limit
+  (`deadline-too-large`).
+- **A defect exits differently:** TS `invariant` rejects the top-level `await` (exit 1, the same
+  as unhealthy), Rust `panic!` exits 101. No fixture can cause one, so this isn't pinned.
 
 ### functype-rs (fixed)
 

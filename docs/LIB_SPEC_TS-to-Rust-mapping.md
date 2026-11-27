@@ -209,7 +209,7 @@ and `async fn` is what a Rust reader or an LLM writes by default.
 | `bracket` / `acquireRelease` | a `Drop` guard for sync release; see Limits |
 | `run()` | `.await` |
 | `runExit({ signal })` | functype-rs `run_exit(fut, token.cancelled()).await` → `Exit<E, A>`. The second argument is any cancellation future; `runExit()` with no signal → `std::future::pending()` |
-| `runExit({ signal: AbortSignal.timeout(ms) })` | `run_exit(fut, sleep_until(deadline))`, with `deadline = Instant::now() + d` computed once and shared, as one TS signal is | An effect that can't fail goes in as `async { Ok::<_, Infallible>(…) }`, and `Exit::Failure(never) => match never {}` |
+| `runExit({ signal: AbortSignal.timeout(ms) })` | `run_exit(fut, sleep_until(deadline))`, with `deadline = Instant::now() + d` computed once and shared, as one TS signal is. An effect that can't fail goes in as `async { Ok::<_, Infallible>(…) }`, and `Exit::Failure(never) => match never {}`. Node timers top out at 2147483647 ms: a larger `ms` fires after 1 ms, and one past 2^32 throws `ERR_OUT_OF_RANGE`, where tokio sleeps as asked. Bound the value on both sides |
 | fire-and-forget `io.run()` (no `await`) | `tokio::spawn(fut)` |
 | `runSync()` | a plain sync fn returning `Result` |
 | `provide*` | see Services |
