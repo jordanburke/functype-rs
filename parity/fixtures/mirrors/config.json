@@ -1,0 +1,6 @@
+{
+  "endpoints": [
+    { "name": "falls-back", "paths": ["/primary", "/mirror", "/unused"], "retries": 1 },
+    { "name": "all-missing", "paths": ["/gone-a", "/gone-b"], "retries": 2 }
+  ]
+}

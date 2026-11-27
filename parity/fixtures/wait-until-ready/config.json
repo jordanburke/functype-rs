@@ -1,0 +1,8 @@
+{
+  "endpoints": [
+    { "name": "becomes-ready", "paths": ["/warming"], "retries": 0, "waitUntilReady": 5 },
+    { "name": "never-ready", "paths": ["/stuck"], "retries": 0, "waitUntilReady": 3 },
+    { "name": "no-ready-field", "paths": ["/silent"], "retries": 0, "waitUntilReady": 2 },
+    { "name": "flaky-then-ready", "paths": ["/flaky-warming"], "retries": 1, "waitUntilReady": 3 }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "exitCode": 1,
+  "report": {
+    "checks": [
+      {
+        "name": "falls-back",
+        "grade": "healthy",
+        "path": "/mirror",
+        "error": null,
+        "status": null
+      },
+      {
+        "name": "all-missing",
+        "grade": "down",
+        "path": null,
+        "status": 404,
+        "error": "status"
+      }
+    ]
+  },
+  "requests": {
+    "/v1/gone-a": 1,
+    "/v1/gone-b": 1,
+    "/v1/mirror": 1,
+    "/v1/primary": 2
+  }
+}

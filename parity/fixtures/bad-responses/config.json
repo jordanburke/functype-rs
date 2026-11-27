@@ -1,0 +1,9 @@
+{
+  "endpoints": [
+    { "name": "not-modified", "paths": ["/cached"], "retries": 2 },
+    { "name": "text-body", "paths": ["/text"], "retries": 2 },
+    { "name": "wrong-shape", "paths": ["/shape"], "retries": 2 },
+    { "name": "null-ready", "paths": ["/null-ready"], "retries": 0 },
+    { "name": "unreachable", "paths": ["http://127.0.0.1:1/health"], "retries": 1 }
+  ]
+}

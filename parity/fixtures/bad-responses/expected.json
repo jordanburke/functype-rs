@@ -1,0 +1,48 @@
+{
+  "exitCode": 1,
+  "report": {
+    "checks": [
+      {
+        "name": "not-modified",
+        "grade": "down",
+        "path": null,
+        "status": 304,
+        "error": "status"
+      },
+      {
+        "name": "text-body",
+        "grade": "down",
+        "path": null,
+        "status": null,
+        "error": "decode"
+      },
+      {
+        "name": "wrong-shape",
+        "grade": "down",
+        "path": null,
+        "status": null,
+        "error": "decode"
+      },
+      {
+        "name": "null-ready",
+        "grade": "healthy",
+        "path": "/null-ready",
+        "error": null,
+        "status": null
+      },
+      {
+        "name": "unreachable",
+        "grade": "down",
+        "path": null,
+        "status": null,
+        "error": "network"
+      }
+    ]
+  },
+  "requests": {
+    "/v1/cached": 1,
+    "/v1/null-ready": 1,
+    "/v1/shape": 1,
+    "/v1/text": 1
+  }
+}

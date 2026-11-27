@@ -1,0 +1,41 @@
+{
+  "exitCode": 1,
+  "report": {
+    "checks": [
+      {
+        "name": "becomes-ready",
+        "grade": "healthy",
+        "path": "/warming",
+        "error": null,
+        "status": null
+      },
+      {
+        "name": "never-ready",
+        "grade": "not_ready",
+        "path": null,
+        "status": null,
+        "error": "exhausted"
+      },
+      {
+        "name": "no-ready-field",
+        "grade": "not_ready",
+        "path": null,
+        "status": null,
+        "error": "exhausted"
+      },
+      {
+        "name": "flaky-then-ready",
+        "grade": "healthy",
+        "path": "/flaky-warming",
+        "error": null,
+        "status": null
+      }
+    ]
+  },
+  "requests": {
+    "/v1/flaky-warming": 4,
+    "/v1/silent": 2,
+    "/v1/stuck": 3,
+    "/v1/warming": 3
+  }
+}

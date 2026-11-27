@@ -63,3 +63,23 @@ jobs:
       - run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
+
+  parity:
+    name: Parity
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: parity/ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: parity/ts/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: parity/ts/.nvmrc
+          cache: pnpm
+          cache-dependency-path: parity/ts/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm validate
+      - run: node ../run.mjs ts

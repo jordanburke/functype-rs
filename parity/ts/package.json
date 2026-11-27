@@ -1,0 +1,33 @@
+{
+  "name": "functype-parity-ts",
+  "private": true,
+  "type": "module",
+  "description": "TS half of the functype parity app: an endpoint health checker written with functype",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "typecheck": "tsc -p . --noEmit",
+    "lint": "eslint src",
+    "format": "prettier --write src",
+    "format:check": "prettier --check src",
+    "validate": "pnpm format:check && pnpm lint && pnpm build"
+  },
+  "dependencies": {
+    "functype": "2.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.4",
+    "@typescript-eslint/eslint-plugin": "8.74.0",
+    "@typescript-eslint/parser": "8.74.0",
+    "eslint": "10.16.0",
+    "eslint-config-functype": "2.202.2",
+    "eslint-plugin-functype": "2.202.2",
+    "eslint-plugin-prettier": "5.5.7",
+    "eslint-plugin-simple-import-sort": "14.0.0",
+    "prettier": "3.10.1",
+    "typescript": "6.0.3"
+  }
+}

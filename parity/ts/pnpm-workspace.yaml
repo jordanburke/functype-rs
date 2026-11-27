@@ -1,0 +1,6 @@
+minimumReleaseAgeExclude:
+  - '@eslint/config-array@0.23.7'
+  - eslint-config-functype@2.202.2
+  - eslint-plugin-functype@2.202.2
+  - eslint@10.16.0
+  - functype@2.2.2

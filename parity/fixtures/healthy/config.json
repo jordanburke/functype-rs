@@ -1,0 +1,7 @@
+{
+  "endpoints": [
+    { "name": "api", "paths": ["/api"], "retries": 0 },
+    { "name": "worker", "paths": ["worker"], "retries": 0 },
+    { "name": "legacy", "paths": ["/legacy"], "retries": 0 }
+  ]
+}

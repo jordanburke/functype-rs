@@ -1,0 +1,17 @@
+{
+  "exitCode": 2,
+  "report": {
+    "configErrors": [
+      "endpoints[0].name",
+      "endpoints[0].paths",
+      "endpoints[0].retries",
+      "endpoints[1].optional",
+      "endpoints[1].retries",
+      "endpoints[1].waitUntilReady",
+      "endpoints[2].name",
+      "endpoints[2].paths[0]",
+      "endpoints[2].retries"
+    ]
+  },
+  "requests": {}
+}

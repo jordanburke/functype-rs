@@ -1,0 +1,5 @@
+{
+  "/v1/flaky": [{ "status": 503 }, { "status": 503 }, { "status": 200, "body": { "status": "ok" } }],
+  "/v1/exhausted": [{ "status": 503 }],
+  "/v1/client-error": [{ "status": 400, "body": { "error": "bad request" } }]
+}
