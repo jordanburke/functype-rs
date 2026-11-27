@@ -630,7 +630,10 @@ mod proptest_tests {
         let borrowed: NonEmptyVec<&str> = v.map(|s| s.as_str());
         assert_eq!(borrowed.into_vec(), vec!["a", "bc"]);
         let closures = v.map(|s| move || s.len());
-        assert_eq!(closures.into_vec().into_iter().map(|f| f()).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(
+            closures.into_vec().into_iter().map(|f| f()).collect::<Vec<_>>(),
+            vec![1, 2]
+        );
     }
 
     #[test]
