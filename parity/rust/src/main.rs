@@ -5,8 +5,14 @@ mod check;
 mod config;
 mod http;
 
+use std::convert::Infallible;
+use std::future::pending;
 use std::io::Write;
 use std::process::ExitCode;
+use std::time::Duration;
+
+use functype_io::{run_exit, Exit};
+use tokio::time::{sleep_until, Instant};
 
 use serde::Serialize;
 
@@ -56,7 +62,10 @@ fn parse_args() -> Result<Args, String> {
 
 /// TS `Cond.of<number>().when(anyDown, EXIT_UNHEALTHY).else(EXIT_OK)`.
 fn exit_code_for(rows: &[Row]) -> u8 {
-    if rows.iter().any(|r| matches!(r.grade, Grade::Down | Grade::NotReady)) {
+    if rows
+        .iter()
+        .any(|r| matches!(r.grade, Grade::Down | Grade::NotReady | Grade::Cancelled))
+    {
         EXIT_UNHEALTHY
     } else {
         EXIT_OK
@@ -94,8 +103,31 @@ async fn main() -> ExitCode {
         Err(config_errors) => print(&Report::Invalid { config_errors }, EXIT_INVALID_CONFIG),
         Ok(config) => {
             let http = Http::new(&args.base_url);
-            // TS `IO.all(rows)`: every check runs at once, and each always gives a row.
-            let rows = futures::future::join_all(config.endpoints.iter().map(|e| check(&http, e))).await;
+            // `async move` below captures the reference, not the client.
+            let http = &http;
+            // TS `AbortSignal.timeout(ms)`: one deadline for the whole run.
+            let deadline = config
+                .deadline_ms
+                .map(|ms| Instant::now() + Duration::from_millis(ms as u64));
+            // TS `check(http, e).runExit({ signal })` per check, all at once.
+            let rows = futures::future::join_all(config.endpoints.iter().map(|e| {
+                let cancelled = async move {
+                    match deadline {
+                        Some(at) => sleep_until(at).await,
+                        None => pending::<()>().await,
+                    }
+                };
+                async move {
+                    match run_exit(async { Ok::<Row, Infallible>(check(http, e).await) }, cancelled).await {
+                        Exit::Success(row) => row,
+                        Exit::Failure(never) => match never {},
+                        Exit::Interrupted => Row::cancelled(&e.name),
+                        // TS `invariant(false, …)`: a defect here is a bug, so crash.
+                        Exit::Die(defect) => panic!("check {} died: {}", e.name, defect.message()),
+                    }
+                }
+            }))
+            .await;
             let code = exit_code_for(&rows);
             print(&Report::Checked { checks: rows }, code)
         }

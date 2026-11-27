@@ -1,0 +1,7 @@
+{
+  "deadlineMs": 10000,
+  "endpoints": [
+    { "name": "fast", "paths": ["/fast"], "retries": 0 },
+    { "name": "slow-but-in-time", "paths": ["/slow"], "retries": 0 }
+  ]
+}

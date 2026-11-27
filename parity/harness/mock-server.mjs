@@ -27,7 +27,8 @@ const send = (res, r) => {
       res.end(JSON.stringify(r.body ?? {}))
     }
   }
-  if (r.delayMs) setTimeout(write, r.delayMs)
+  // unref: a response the client gave up on must not keep the harness running.
+  if (r.delayMs) setTimeout(write, r.delayMs).unref()
   else write()
 }
 

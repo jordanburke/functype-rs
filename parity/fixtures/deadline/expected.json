@@ -1,0 +1,34 @@
+{
+  "exitCode": 1,
+  "report": {
+    "checks": [
+      {
+        "name": "fast",
+        "grade": "healthy",
+        "path": "/fast",
+        "error": null,
+        "status": null
+      },
+      {
+        "name": "stalled",
+        "grade": "cancelled",
+        "path": null,
+        "error": null,
+        "status": null
+      },
+      {
+        "name": "stalled-mirror",
+        "grade": "cancelled",
+        "path": null,
+        "error": null,
+        "status": null
+      }
+    ]
+  },
+  "requests": {
+    "/v1/down": 1,
+    "/v1/fast": 1,
+    "/v1/stalled": 1,
+    "/v1/stalled-too": 1
+  }
+}

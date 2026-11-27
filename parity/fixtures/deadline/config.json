@@ -1,0 +1,8 @@
+{
+  "deadlineMs": 1500,
+  "endpoints": [
+    { "name": "fast", "paths": ["/fast"], "retries": 0 },
+    { "name": "stalled", "paths": ["/stalled"], "retries": 0 },
+    { "name": "stalled-mirror", "paths": ["/down", "/stalled-too"], "retries": 0 }
+  ]
+}

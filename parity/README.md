@@ -21,8 +21,11 @@ The app reads a config of endpoints, checks each one over HTTP, and prints a JSO
   (`repeatUntil`).
 - **`optional: true`** turns a final 404 into `absent` (`catchTag`). With mirrors, the final
   failure is the last mirror's (`firstSuccessOf` returns the last failure).
+- **`deadlineMs`** runs each check to an `Exit` under one shared deadline (TS `runExit({ signal:
+  AbortSignal.timeout(ms) })`; Rust `run_exit(fut, sleep_until(deadline))`). A check still
+  running then is `cancelled`; the others keep their results.
 - **Grades** come from the body's `status` (`Match`), and the exit code from the grades (`Cond`):
-  0 healthy, 1 something down or not ready, 2 invalid config.
+  0 healthy, 1 something down, not ready or cancelled, 2 invalid config.
 
 ## Layout
 
@@ -77,6 +80,7 @@ each turned at least one fixture red:
 | network errors not retried | `network-retry` |
 | a serde struct accepting a JSON array | `decoder-edges` |
 | reqwest without `charset` (BOM kept) | `decoder-edges` |
+| deadline ignored | `deadline` |
 
 ## Findings
 
@@ -99,6 +103,16 @@ repo's crates, or noted for the library it belongs to.
 - **reqwest without default features** keeps a leading BOM in `text()` (it needs `charset`) and
   can't reach `https` URLs. `fetch` strips the BOM.
 - **`serde_json` and `JSON.parse` differ** on `1e400` and lone surrogates.
+- **TS `Exit.match` without a `Die` arm** sends a defect to `Failure`. A Rust `match` must name
+  `Exit::Die`, so the translation has to decide what the TS code meant. The app now names `Die`
+  on both sides, and crashes there.
+- **`runExit({ signal: AbortSignal.timeout(ms) })`** maps to `run_exit` with one shared
+  `sleep_until(deadline)`, and an effect that can't fail goes in as `Ok::<_, Infallible>`.
+- **Node timers top out at 2147483647 ms.** A larger `AbortSignal.timeout` fires after 1 ms, and
+  one past 2^32 throws; tokio sleeps as asked. Both apps reject a `deadlineMs` over the limit
+  (`deadline-too-large`).
+- **A defect exits differently:** TS `invariant` rejects the top-level `await` (exit 1, the same
+  as unhealthy), Rust `panic!` exits 101. No fixture can cause one, so this isn't pinned.
 
 ### functype-rs (fixed)
 

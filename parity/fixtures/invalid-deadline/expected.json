@@ -1,0 +1,10 @@
+{
+  "exitCode": 2,
+  "report": {
+    "configErrors": [
+      "deadlineMs",
+      "endpoints"
+    ]
+  },
+  "requests": {}
+}

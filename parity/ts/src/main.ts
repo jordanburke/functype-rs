@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs"
 import { parseArgs } from "node:util"
 
-import { Cond, Http, IO, Try } from "functype"
+import { Cond, Http, invariant, Try } from "functype"
 
-import { check, type Row } from "./check.js"
+import { cancelledRow, check, type Row } from "./check.js"
 import { decodeConfig } from "./config.js"
 
 type Report = { readonly configErrors: readonly string[] } | { readonly checks: readonly Row[] }
@@ -33,7 +33,7 @@ const baseUrl = values["base-url"] ?? ""
 const exitCodeFor = (rows: readonly Row[]): number =>
   Cond.of<number>()
     .when(
-      rows.some((r) => r.grade === "down" || r.grade === "not_ready"),
+      rows.some((r) => r.grade === "down" || r.grade === "not_ready" || r.grade === "cancelled"),
       EXIT_UNHEALTHY,
     )
     .else(EXIT_OK)
@@ -54,7 +54,26 @@ await parsed.fold(
   },
   async (config) => {
     const http = Http.client({ baseUrl })
-    const rows = await IO.all(config.endpoints.map((e) => check(http, e))).runOrThrow()
+    // One deadline for the whole run. Each check runs to an Exit, so a check the deadline stops
+    // reports Interrupted while the others keep their results.
+    const options = config.deadlineMs.fold(
+      () => ({}),
+      (ms) => ({ signal: AbortSignal.timeout(ms) }),
+    )
+    const rows = await Promise.all(
+      config.endpoints.map(async (e) =>
+        (await check(http, e).runExit(options)).match({
+          Success: (row) => row,
+          // A check can't fail (its E is never), so this arm never runs.
+          Failure: () => cancelledRow(e.name),
+          Interrupted: () => cancelledRow(e.name),
+          // Without a Die arm, match routes a defect to Failure; a defect here is a bug, so crash.
+          Die: (defect): Row => {
+            invariant(false, () => `check ${e.name} died: ${String(defect)}`)
+          },
+        }),
+      ),
+    )
     print({ checks: rows }, exitCodeFor(rows))
   },
 )

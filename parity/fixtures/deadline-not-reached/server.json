@@ -1,0 +1,4 @@
+{
+  "/v1/fast": [{ "status": 200, "body": { "status": "ok" } }],
+  "/v1/slow": [{ "status": 200, "body": { "status": "degraded" }, "delayMs": 300 }]
+}

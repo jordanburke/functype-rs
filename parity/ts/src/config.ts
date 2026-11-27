@@ -11,6 +11,8 @@ export type Endpoint = {
 
 export type Config = {
   readonly endpoints: readonly Endpoint[]
+  /** Checks still running after this many milliseconds are reported as `cancelled`. */
+  readonly deadlineMs: Option<number>
 }
 
 const nonEmptyString: Decoder<string> = (raw) =>
@@ -28,6 +30,16 @@ const nonNegativeInt: Decoder<number> = (raw) =>
 const positiveInt: Decoder<number> = (raw) =>
   nonNegativeInt(raw).flatMap((n) =>
     n > 0 ? Right<DecoderError, number>(n) : Left<DecoderError, number>(DecoderError.leaf([], "expected at least 1")),
+  )
+
+/** Node timers top out at 2^31 - 1 ms; a larger value fires after 1 ms, or throws past 2^32. */
+const MAX_TIMER_MS = 2_147_483_647
+
+const timerMs: Decoder<number> = (raw) =>
+  positiveInt(raw).flatMap((n) =>
+    n <= MAX_TIMER_MS
+      ? Right<DecoderError, number>(n)
+      : Left<DecoderError, number>(DecoderError.leaf([], `expected at most ${MAX_TIMER_MS}`)),
   )
 
 const nonEmptyArray =
@@ -48,7 +60,10 @@ const endpoint: Decoder<Endpoint> = (raw) =>
     waitUntilReady: Decoder.option(positiveInt),
   })(raw).map((e) => ({ ...e, optional: e.optional.getOrElse(() => false) }))
 
-const config: Decoder<Config> = Decoder.object({ endpoints: Decoder.array(endpoint) })
+const config: Decoder<Config> = Decoder.object({
+  endpoints: Decoder.array(endpoint),
+  deadlineMs: Decoder.option(timerMs),
+})
 
 /** Renders a decoder path as `endpoints[1].name`, the format `DecoderError.format` uses. */
 const formatPath = (path: ReadonlyArray<string>): string =>

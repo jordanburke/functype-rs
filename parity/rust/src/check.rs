@@ -45,6 +45,7 @@ pub enum Grade {
     Absent,
     Down,
     NotReady,
+    Cancelled,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -90,6 +91,14 @@ impl Row {
         Row {
             grade: grade_of(&hit.health),
             path: Some(hit.path),
+            ..Row::down(name)
+        }
+    }
+
+    /// A check the deadline stopped before it finished.
+    pub fn cancelled(name: &str) -> Self {
+        Row {
+            grade: Grade::Cancelled,
             ..Row::down(name)
         }
     }
