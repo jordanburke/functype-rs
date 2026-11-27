@@ -5,20 +5,25 @@
 //
 //   { "/v1/api": [{ "status": 503 }, { "status": 200, "body": { "status": "ok" } }] }
 //
-// A response is { status, body?, text?, contentType?, delayMs? }. `body` is sent as JSON with
-// content type application/json; `text` is sent as-is with `contentType` (default text/plain).
+// A response is { status, body?, text?, contentType?, delayMs? }, or { drop: true }.
+// - `body` is sent as JSON with content type application/json.
+// - `text` is sent as-is with `contentType` (default text/plain).
+// - `drop` counts the request, then destroys the socket without answering: a network error.
+// Every response sends `Connection: close`, so no client can reuse a socket the server is closing.
 import { createServer } from "node:http"
 
 const send = (res, r) => {
   const write = () => {
-    if (r.status === 304 || r.status === 204) {
-      res.writeHead(r.status)
+    if (r.drop) {
+      res.socket?.destroy()
+    } else if (r.status === 304 || r.status === 204) {
+      res.writeHead(r.status, { connection: "close" })
       res.end()
     } else if (r.text !== undefined) {
-      res.writeHead(r.status, { "content-type": r.contentType ?? "text/plain" })
+      res.writeHead(r.status, { "content-type": r.contentType ?? "text/plain", connection: "close" })
       res.end(r.text)
     } else {
-      res.writeHead(r.status, { "content-type": r.contentType ?? "application/json" })
+      res.writeHead(r.status, { "content-type": r.contentType ?? "application/json", connection: "close" })
       res.end(JSON.stringify(r.body ?? {}))
     }
   }
@@ -38,7 +43,6 @@ export const startMock = (script) =>
       if (!responses || responses.length === 0) return send(res, { status: 404, body: { error: "no such path" } })
       send(res, responses[Math.min(n, responses.length - 1)])
     })
-    server.keepAliveTimeout = 1
     server.listen(0, "127.0.0.1", () => {
       const { port } = server.address()
       resolve({

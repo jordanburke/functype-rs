@@ -1,0 +1,24 @@
+{
+  "exitCode": 0,
+  "report": {
+    "checks": [
+      {
+        "name": "leading-slash",
+        "grade": "healthy",
+        "path": "/api",
+        "error": null,
+        "status": null
+      },
+      {
+        "name": "no-slash",
+        "grade": "healthy",
+        "path": "api",
+        "error": null,
+        "status": null
+      }
+    ]
+  },
+  "requests": {
+    "/base/api": 2
+  }
+}

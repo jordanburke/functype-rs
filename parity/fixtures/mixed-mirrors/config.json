@@ -1,0 +1,6 @@
+{
+  "endpoints": [
+    { "name": "last-is-404", "paths": ["/m-500", "/m-404"], "retries": 0, "optional": true },
+    { "name": "last-is-500", "paths": ["/n-404", "/n-500"], "retries": 0, "optional": true }
+  ]
+}

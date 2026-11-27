@@ -1,0 +1,6 @@
+{
+  "endpoints": [
+    { "name": "recovers", "paths": ["/flaky-socket"], "retries": 2 },
+    { "name": "stays-down", "paths": ["/dead-socket"], "retries": 1 }
+  ]
+}

@@ -19,7 +19,8 @@ The app reads a config of endpoints, checks each one over HTTP, and prints a JSO
   (`retryWithBackoff` with `while`).
 - **`waitUntilReady: n`** polls until the body says `ready: true`, at most `n` times
   (`repeatUntil`).
-- **`optional: true`** turns a 404 into `absent` (`catchTag`).
+- **`optional: true`** turns a final 404 into `absent` (`catchTag`). With mirrors, the final
+  failure is the last mirror's (`firstSuccessOf` returns the last failure).
 - **Grades** come from the body's `status` (`Match`), and the exit code from the grades (`Cond`):
   0 healthy, 1 something down or not ready, 2 invalid config.
 
@@ -29,7 +30,8 @@ The app reads a config of endpoints, checks each one over HTTP, and prints a JSO
 - `rust/` — the Rust app, using this repo's crates by path. It is excluded from the Cargo
   workspace and keeps its own `Cargo.lock`.
 - `fixtures/<case>/` — `config.json`, the mock server's script `server.json`, and
-  `expected.json`.
+  `expected.json`. A fixture may leave out `config.json` to test a missing file, and may add
+  `harness.json` (`{ "basePath": "/v1/" }`) to change the base URL's path.
 - `harness/mock-server.mjs` — a scripted HTTP server with no dependencies.
 - `run.mjs` — runs each implementation against each fixture, on a fresh mock server each time.
 
@@ -51,7 +53,8 @@ needs a different expected result for Rust, that is a finding, not a fix.
 # Check both against every fixture
 node parity/run.mjs ts rust
 
-# Regenerate expected.json from the TS app (after changing a fixture on purpose)
+# Regenerate expected.json from the TS app (after changing a fixture on purpose).
+# The harness refuses --update for any other implementation.
 node parity/run.mjs --update ts
 ```
 
@@ -71,6 +74,7 @@ each turned at least one fixture red:
 | `catchTag` match without the 404 check | `optional` |
 | a missing `ready` counted as ready | `wait-until-ready` |
 | mirrors tried in reverse order | `mirrors` |
+| network errors not retried | `network-retry` |
 
 ## Findings
 
@@ -102,5 +106,7 @@ repo's crates, or noted for the library it belongs to.
 - `eslint-config-functype`'s `recommended` sets rules only. It registers no parser, plugins or
   `files`, so the README's `export default [recommended]` lints no `.ts` files on ESLint 10.
   `ts/eslint.config.mjs` supplies them.
+- `DecoderError.format` renders paths as `endpoints[1].name`, but the path formatter itself
+  isn't exported, so `config.ts` repeats it to report one path per error.
 - `Match(…).caseValue("ok", "healthy")` infers `string` for the result, so matching into a
   string-literal union needs a type argument on each call: `caseValue<Grade>(…)`.

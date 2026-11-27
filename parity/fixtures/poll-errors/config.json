@@ -1,0 +1,6 @@
+{
+  "endpoints": [
+    { "name": "fails-mid-poll", "paths": ["/mid-poll"], "retries": 0, "waitUntilReady": 5 },
+    { "name": "optional-polled", "paths": ["/never-there"], "retries": 0, "optional": true, "waitUntilReady": 3 }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "/v1/no-content": [{ "status": 204 }],
+  "/v1/bad-json": [{ "status": 200, "text": "{not json", "contentType": "application/json" }]
+}

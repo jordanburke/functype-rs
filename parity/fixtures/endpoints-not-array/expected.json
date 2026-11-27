@@ -1,0 +1,9 @@
+{
+  "exitCode": 2,
+  "report": {
+    "configErrors": [
+      "endpoints"
+    ]
+  },
+  "requests": {}
+}

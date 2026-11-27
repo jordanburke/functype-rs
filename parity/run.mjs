@@ -5,12 +5,14 @@
 //   node parity/run.mjs ts rust        check both implementations
 //   node parity/run.mjs --update ts    rewrite every expected.json from the TS run
 //
-// A fixture is a directory under parity/fixtures with config.json, server.json and
-// expected.json. Each implementation run gets a fresh mock server, so scripted sequences
-// ("fail twice, then 200") start over. The result compared is the exit code, the JSON report on
-// stdout, and how many requests reached each path.
+// A fixture is a directory under parity/fixtures with server.json, expected.json, usually
+// config.json (a fixture may leave it out to test a missing file), and optionally harness.json,
+// { "basePath": "/v1/" }, to change the base URL's path (default "/v1"). Each implementation
+// run gets a fresh mock server, so scripted sequences ("fail twice, then 200") start over. The
+// result compared is the exit code, the JSON report on stdout, and how many requests reached
+// each path.
 import { spawn } from "node:child_process"
-import { readdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { deepStrictEqual } from "node:assert/strict"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -30,6 +32,19 @@ const impls = args.filter((a) => !a.startsWith("--"))
 if (impls.length === 0 || impls.some((i) => !IMPLS[i])) {
   console.error(`usage: node parity/run.mjs [--update] <${Object.keys(IMPLS).join("|")}>...`)
   process.exit(64)
+}
+// The TS app is the reference; expected.json never comes from a translation.
+if (update && (impls.length !== 1 || impls[0] !== "ts")) {
+  console.error("--update writes expected.json from the TS app only: node parity/run.mjs --update ts")
+  process.exit(64)
+}
+for (const impl of impls) {
+  const [cmd, pre] = IMPLS[impl]
+  const entry = pre[0] ?? cmd
+  if (!existsSync(entry)) {
+    console.error(`${impl}: ${entry} not found; build it first (see parity/README.md)`)
+    process.exit(66)
+  }
 }
 
 const run = (impl, configPath, baseUrl) =>
@@ -62,9 +77,11 @@ let failures = 0
 for (const name of fixtures) {
   const dir = join(fixturesDir, name)
   const script = JSON.parse(readFileSync(join(dir, "server.json"), "utf8"))
+  const harness = existsSync(join(dir, "harness.json")) ? JSON.parse(readFileSync(join(dir, "harness.json"), "utf8")) : {}
+  const basePath = harness.basePath ?? "/v1"
   for (const impl of impls) {
     const mock = await startMock(script)
-    const out = await run(impl, join(dir, "config.json"), `${mock.url}/v1`)
+    const out = await run(impl, join(dir, "config.json"), `${mock.url}${basePath}`)
     await mock.close()
     const label = `${name} [${impl}]`
     let report
@@ -77,7 +94,7 @@ for (const name of fixtures) {
     }
     const actual = { exitCode: out.code, report, requests: sorted(mock.requests) }
     const expectedPath = join(dir, "expected.json")
-    if (update && impl === impls[0]) {
+    if (update) {
       writeFileSync(expectedPath, `${JSON.stringify(actual, null, 2)}\n`)
       console.log(`WROTE ${label}`)
       continue

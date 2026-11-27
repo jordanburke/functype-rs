@@ -1,0 +1,25 @@
+{
+  "exitCode": 1,
+  "report": {
+    "checks": [
+      {
+        "name": "fails-mid-poll",
+        "grade": "down",
+        "path": null,
+        "status": 400,
+        "error": "status"
+      },
+      {
+        "name": "optional-polled",
+        "grade": "absent",
+        "path": null,
+        "error": null,
+        "status": 404
+      }
+    ]
+  },
+  "requests": {
+    "/v1/mid-poll": 2,
+    "/v1/never-there": 1
+  }
+}

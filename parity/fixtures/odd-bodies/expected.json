@@ -1,0 +1,25 @@
+{
+  "exitCode": 1,
+  "report": {
+    "checks": [
+      {
+        "name": "no-content",
+        "grade": "down",
+        "path": null,
+        "status": null,
+        "error": "decode"
+      },
+      {
+        "name": "bad-json",
+        "grade": "down",
+        "path": null,
+        "status": null,
+        "error": "decode"
+      }
+    ]
+  },
+  "requests": {
+    "/v1/bad-json": 1,
+    "/v1/no-content": 1
+  }
+}
