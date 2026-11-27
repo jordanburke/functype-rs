@@ -57,7 +57,7 @@ stable by then (`inspect`/`inspect_err` 1.76, `LazyLock` 1.80), and indexmap 2.1
 | `TypedError<Code>` | error `enum` (e.g. with `thiserror`), one variant per code | TS discriminates on `code` (`error/typed/TypedError.ts:95-96`). Its `_tag` is always `"Throwable"` (`core/throwable/Throwable.ts:20`), so `catchTag` does not apply to it |
 | `Validation` helpers → `FormValidation<T>` = `Either<List<TypedError>, T>` | `Result<T, NonEmptyVec<E>>` via `functype_core::Validated<E, A>` | See Validated |
 | `IO<R, E, A>` | `async fn -> Result<A, E>` | See IO |
-| `Exit<E, A>` | **functype-rs `Exit`** + `run_exit` | `fold`/`match` → Rust `match`; `mapError` → `map_err`; `flatMap` → `and_then`; `toOption` → `ok()`; `getOrElse` → `unwrap_or_else` |
+| `Exit<E, A>` | **functype-rs `Exit`** + `run_exit` | `fold`/`match` → Rust `match`; `mapError` → `map_err`; `flatMap` → `and_then`; `toOption` → `ok()`; `getOrElse` → `unwrap_or_else`. **TS `match` and `fold` without a `Die` arm send a defect to the `Failure` arm** (`io/Exit.ts:72-94`); a Rust `match` has to name `Exit::Die`, so decide what the TS code meant |
 | `Context` / `Tag` / `Layer` | plain arguments, see Services | |
 | `Match` / `Cond`, `Http`, `Decoder`, serialization | `match` / `if`, `reqwest`, `serde` | See Other modules |
 | `Obj` | **not mapped yet** | |
@@ -209,6 +209,7 @@ and `async fn` is what a Rust reader or an LLM writes by default.
 | `bracket` / `acquireRelease` | a `Drop` guard for sync release; see Limits |
 | `run()` | `.await` |
 | `runExit({ signal })` | functype-rs `run_exit(fut, token.cancelled()).await` → `Exit<E, A>`. The second argument is any cancellation future; `runExit()` with no signal → `std::future::pending()` |
+| `runExit({ signal: AbortSignal.timeout(ms) })` | `run_exit(fut, sleep_until(deadline))`, with `deadline = Instant::now() + d` computed once and shared, as one TS signal is | An effect that can't fail goes in as `async { Ok::<_, Infallible>(…) }`, and `Exit::Failure(never) => match never {}` |
 | fire-and-forget `io.run()` (no `await`) | `tokio::spawn(fut)` |
 | `runSync()` | a plain sync fn returning `Result` |
 | `provide*` | see Services |

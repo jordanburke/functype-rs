@@ -1,0 +1,6 @@
+{
+  "/v1/fast": [{ "status": 200, "body": { "status": "ok" } }],
+  "/v1/stalled": [{ "status": 200, "body": { "status": "ok" }, "delayMs": 20000 }],
+  "/v1/down": [{ "status": 500 }],
+  "/v1/stalled-too": [{ "status": 200, "body": { "status": "ok" }, "delayMs": 20000 }]
+}

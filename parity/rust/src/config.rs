@@ -23,6 +23,8 @@ pub struct Endpoint {
 #[derive(Clone, Debug)]
 pub struct Config {
     pub endpoints: Vec<Endpoint>,
+    /// Checks still running after this many milliseconds are reported as `cancelled`.
+    pub deadline_ms: Option<usize>,
 }
 
 /// A field's result. The error is the field's path.
@@ -116,20 +118,24 @@ pub fn decode_config(raw: &Value) -> Result<Config, Vec<String>> {
     let Some(obj) = raw.as_object() else {
         return Err(vec!["(root)".to_string()]);
     };
-    let Some(items) = get(obj, "endpoints").as_array() else {
-        return Err(vec!["endpoints".to_string()]);
+    // TS reports a non-array `endpoints` with any other field errors, so keep collecting.
+    let endpoints = match get(obj, "endpoints").as_array() {
+        Some(items) => sequence(
+            items
+                .iter()
+                .enumerate()
+                .map(|(i, e)| endpoint(e, &format!("endpoints[{i}]"))),
+        ),
+        None => Validated::invalid("endpoints".to_string()),
     };
-    sequence(
-        items
-            .iter()
-            .enumerate()
-            .map(|(i, e)| endpoint(e, &format!("endpoints[{i}]"))),
-    )
-    .map(|endpoints| Config { endpoints })
-    .to_result()
-    .map_err(|errors| {
-        let mut paths = errors.into_vec();
-        paths.sort();
-        paths
-    })
+    let deadline = option(get(obj, "deadlineMs"), |v| positive_int(v, "deadlineMs"));
+    endpoints
+        .zip(&deadline)
+        .map(|(endpoints, deadline_ms)| Config { endpoints, deadline_ms })
+        .to_result()
+        .map_err(|errors| {
+            let mut paths = errors.into_vec();
+            paths.sort();
+            paths
+        })
 }

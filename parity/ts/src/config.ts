@@ -11,6 +11,8 @@ export type Endpoint = {
 
 export type Config = {
   readonly endpoints: readonly Endpoint[]
+  /** Checks still running after this many milliseconds are reported as `cancelled`. */
+  readonly deadlineMs: Option<number>
 }
 
 const nonEmptyString: Decoder<string> = (raw) =>
@@ -48,7 +50,10 @@ const endpoint: Decoder<Endpoint> = (raw) =>
     waitUntilReady: Decoder.option(positiveInt),
   })(raw).map((e) => ({ ...e, optional: e.optional.getOrElse(() => false) }))
 
-const config: Decoder<Config> = Decoder.object({ endpoints: Decoder.array(endpoint) })
+const config: Decoder<Config> = Decoder.object({
+  endpoints: Decoder.array(endpoint),
+  deadlineMs: Decoder.option(positiveInt),
+})
 
 /** Renders a decoder path as `endpoints[1].name`, the format `DecoderError.format` uses. */
 const formatPath = (path: ReadonlyArray<string>): string =>

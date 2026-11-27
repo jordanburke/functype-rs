@@ -1,0 +1,25 @@
+{
+  "exitCode": 0,
+  "report": {
+    "checks": [
+      {
+        "name": "fast",
+        "grade": "healthy",
+        "path": "/fast",
+        "error": null,
+        "status": null
+      },
+      {
+        "name": "slow-but-in-time",
+        "grade": "degraded",
+        "path": "/slow",
+        "error": null,
+        "status": null
+      }
+    ]
+  },
+  "requests": {
+    "/v1/fast": 1,
+    "/v1/slow": 1
+  }
+}

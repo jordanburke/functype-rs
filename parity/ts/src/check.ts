@@ -10,7 +10,7 @@ type Health = { readonly status: string; readonly ready: Option<boolean> }
 
 const health: Decoder<Health> = Decoder.object({ status: Decoder.string, ready: Decoder.option(Decoder.boolean) })
 
-export type Grade = "healthy" | "degraded" | "unknown" | "absent" | "down" | "not_ready"
+export type Grade = "healthy" | "degraded" | "unknown" | "absent" | "down" | "not_ready" | "cancelled"
 
 /** One line of the JSON report. It's the wire format the parity harness compares. */
 export type Row = Wire<{
@@ -45,6 +45,9 @@ const okRow = (name: string, hit: Hit): Row => ({
 })
 
 const absentRow = (name: string): Row => ({ name, grade: "absent", path: null, error: null, status: 404 })
+
+/** A check the deadline stopped before it finished. */
+export const cancelledRow = (name: string): Row => ({ name, grade: "cancelled", path: null, error: null, status: null })
 
 const errorRow = (name: string, err: CheckError): Row => {
   const down = { name, grade: "down", path: null, status: null } as const
