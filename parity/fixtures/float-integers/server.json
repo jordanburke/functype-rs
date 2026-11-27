@@ -1,0 +1,3 @@
+{
+  "/v1/whole": [{ "status": 200, "body": { "status": "ok", "ready": true } }]
+}

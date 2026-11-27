@@ -1,0 +1,6 @@
+{
+  "endpoints": [
+    { "name": "whole-floats", "paths": ["/whole"], "retries": 2.0, "waitUntilReady": 1.0 },
+    { "name": "fractional", "paths": ["/fraction"], "retries": 0.5 }
+  ]
+}

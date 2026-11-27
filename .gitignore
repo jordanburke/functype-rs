@@ -1,5 +1,6 @@
 /target
 Cargo.lock
+!parity/rust/Cargo.lock
 .DS_Store
 .idea/
 .worktrees/

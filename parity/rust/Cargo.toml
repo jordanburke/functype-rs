@@ -1,0 +1,16 @@
+[package]
+name = "functype-parity"
+description = "Rust half of the functype parity app: the TS health checker, translated by the mapping doc"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+functype-core = { path = "../../functype-core" }
+functype-io = { path = "../../functype-io" }
+futures = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt", "time"] }
