@@ -1,0 +1,6 @@
+{
+  "/v1/mid-poll": [
+    { "status": 200, "body": { "status": "ok", "ready": false } },
+    { "status": 400, "body": { "error": "gone" } }
+  ]
+}

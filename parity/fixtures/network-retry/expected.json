@@ -1,0 +1,25 @@
+{
+  "exitCode": 1,
+  "report": {
+    "checks": [
+      {
+        "name": "recovers",
+        "grade": "healthy",
+        "path": "/flaky-socket",
+        "error": null,
+        "status": null
+      },
+      {
+        "name": "stays-down",
+        "grade": "down",
+        "path": null,
+        "status": null,
+        "error": "network"
+      }
+    ]
+  },
+  "requests": {
+    "/v1/dead-socket": 2,
+    "/v1/flaky-socket": 3
+  }
+}

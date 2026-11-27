@@ -1,0 +1,33 @@
+{
+  "exitCode": 1,
+  "report": {
+    "checks": [
+      {
+        "name": "array-body",
+        "grade": "down",
+        "path": null,
+        "status": null,
+        "error": "decode"
+      },
+      {
+        "name": "bom-body",
+        "grade": "healthy",
+        "path": "/bom",
+        "error": null,
+        "status": null
+      },
+      {
+        "name": "huge-retries",
+        "grade": "healthy",
+        "path": "/fine",
+        "error": null,
+        "status": null
+      }
+    ]
+  },
+  "requests": {
+    "/v1/array": 1,
+    "/v1/bom": 1,
+    "/v1/fine": 1
+  }
+}

@@ -11,11 +11,21 @@ type Report = { readonly configErrors: readonly string[] } | { readonly checks: 
 const EXIT_OK = 0
 const EXIT_UNHEALTHY = 1
 const EXIT_INVALID_CONFIG = 2
+const EXIT_USAGE = 64
 
-const { values } = parseArgs({
-  options: { config: { type: "string" }, "base-url": { type: "string" } },
-  strict: true,
-})
+const values = Try(
+  () =>
+    parseArgs({
+      options: { config: { type: "string" }, "base-url": { type: "string" } },
+      strict: true,
+    }).values,
+).fold(
+  (e) => {
+    process.stderr.write(`${e.message}\n`)
+    return process.exit(EXIT_USAGE)
+  },
+  (v) => v,
+)
 
 const configPath = values.config ?? "config.json"
 const baseUrl = values["base-url"] ?? ""

@@ -1,0 +1,6 @@
+{
+  "endpoints": [
+    { "name": "leading-slash", "paths": ["/api"], "retries": 0 },
+    { "name": "no-slash", "paths": ["api"], "retries": 0 }
+  ]
+}

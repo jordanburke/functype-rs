@@ -1,0 +1,27 @@
+{
+  "exitCode": 1,
+  "report": {
+    "checks": [
+      {
+        "name": "last-is-404",
+        "grade": "absent",
+        "path": null,
+        "error": null,
+        "status": 404
+      },
+      {
+        "name": "last-is-500",
+        "grade": "down",
+        "path": null,
+        "status": 500,
+        "error": "status"
+      }
+    ]
+  },
+  "requests": {
+    "/v1/m-404": 1,
+    "/v1/m-500": 1,
+    "/v1/n-404": 1,
+    "/v1/n-500": 1
+  }
+}

@@ -19,16 +19,19 @@ The app reads a config of endpoints, checks each one over HTTP, and prints a JSO
   (`retryWithBackoff` with `while`).
 - **`waitUntilReady: n`** polls until the body says `ready: true`, at most `n` times
   (`repeatUntil`).
-- **`optional: true`** turns a 404 into `absent` (`catchTag`).
+- **`optional: true`** turns a final 404 into `absent` (`catchTag`). With mirrors, the final
+  failure is the last mirror's (`firstSuccessOf` returns the last failure).
 - **Grades** come from the body's `status` (`Match`), and the exit code from the grades (`Cond`):
   0 healthy, 1 something down or not ready, 2 invalid config.
 
 ## Layout
 
 - `ts/` — the TS app. `functype` is pinned exactly in `package.json`.
-- `rust/` — the Rust app, using this repo's crates by path.
+- `rust/` — the Rust app, using this repo's crates by path. It is excluded from the Cargo
+  workspace and keeps its own `Cargo.lock`.
 - `fixtures/<case>/` — `config.json`, the mock server's script `server.json`, and
-  `expected.json`.
+  `expected.json`. A fixture may leave out `config.json` to test a missing file, and may add
+  `harness.json` (`{ "basePath": "/v1/" }`) to change the base URL's path.
 - `harness/mock-server.mjs` — a scripted HTTP server with no dependencies.
 - `run.mjs` — runs each implementation against each fixture, on a fresh mock server each time.
 
@@ -43,18 +46,68 @@ library-generated text, because neither would match across languages.
 needs a different expected result for Rust, that is a finding, not a fix.
 
 ```bash
-# TS
-cd parity/ts && pnpm install && pnpm build && cd ../..
-node parity/run.mjs ts
+# Build both
+(cd parity/ts && pnpm install && pnpm build)
+(cd parity/rust && cargo build)
 
-# Regenerate expected.json from the TS app (after changing a fixture on purpose)
+# Check both against every fixture
+node parity/run.mjs ts rust
+
+# Regenerate expected.json from the TS app (after changing a fixture on purpose).
+# The harness refuses --update for any other implementation.
 node parity/run.mjs --update ts
 ```
 
+## Does the oracle catch translation mistakes?
+
+Yes, for every trap tried. Each mutation below made the Rust app commit one mapping-doc trap, and
+each turned at least one fixture red:
+
+| Mutation | Caught by |
+|---|---|
+| `Url::join`-style base URL (drops the base path) | every fixture with requests |
+| integer field via `as_u64` (rejects `2.0`) | `float-integers` |
+| `error_for_status`-style check (only 4xx/5xx fail) | `bad-responses` (the 304) |
+| `.json()` ignoring the content type | `bad-responses` (the `text/plain` body) |
+| retrying every error | `bad-responses` (request counts) |
+| serde-style first-error-only config | `invalid-config` |
+| `catchTag` match without the 404 check | `optional` |
+| a missing `ready` counted as ready | `wait-until-ready` |
+| mirrors tried in reverse order | `mirrors` |
+| network errors not retried | `network-retry` |
+| a serde struct accepting a JSON array | `decoder-edges` |
+| reqwest without `charset` (BOM kept) | `decoder-edges` |
+
 ## Findings
 
-Gaps found while building the app. Each is either fixed in the mapping doc or noted for the
-library it belongs to.
+Gaps found while building the app. Each is either fixed in the mapping doc, fixed in this
+repo's crates, or noted for the library it belongs to.
+
+### Mapping doc (fixed)
+
+- **`Decoder.object` → `Validated`:** the doc said to use `Validated` for every-field errors but
+  showed no recipe. It now has one ("Collecting every field error"), compiled.
+- **The `Http` example's `Decode(reqwest::Error)`** can't hold a failure from serde or from a
+  non-JSON content type. It is now `Decode(String)`, and the example reads the content type
+  before the body, as TS does.
+- **TS's content-type rule** has a third case the doc missed: with no JSON or `text/*` type, TS
+  hands the decoder the `Response` object itself.
+- **`IO.all` over effects that can't fail** maps to `join_all`, not `try_join_all`.
+- **`Number.isInteger`** maps to `as_f64()` plus `fract() == 0.0`; `as_u64()` rejects `2.0`.
+- **A serde-derived struct accepts a JSON array** by position, which `Decoder.object` rejects.
+  `get_json` now checks for an object first.
+- **reqwest without default features** keeps a leading BOM in `text()` (it needs `charset`) and
+  can't reach `https` URLs. `fetch` strips the BOM.
+- **`serde_json` and `JSON.parse` differ** on `1e400` and lone surrogates.
+
+### functype-rs (fixed)
+
+- **`NonEmptyVec::map` couldn't return a value borrowing the element**, such as a
+  `first_success_of` factory that captures a path. It now ties the borrow to the vec, as
+  `Iterator::map` over `iter()` does, and accepts `FnMut`. This is a small breaking change:
+  `NonEmptyVec::map` used as a function value no longer coerces to a higher-ranked signature,
+  such as `let f: fn(&NonEmptyVec<i32>, fn(&i32) -> i32) -> NonEmptyVec<i32> = NonEmptyVec::map;`.
+  Ordinary calls compile as before.
 
 ### TS functype
 
@@ -63,3 +116,7 @@ library it belongs to.
 - `eslint-config-functype`'s `recommended` sets rules only. It registers no parser, plugins or
   `files`, so the README's `export default [recommended]` lints no `.ts` files on ESLint 10.
   `ts/eslint.config.mjs` supplies them.
+- `DecoderError.format` renders paths as `endpoints[1].name`, but the path formatter itself
+  isn't exported, so `config.ts` repeats it to report one path per error.
+- `Match(…).caseValue("ok", "healthy")` infers `string` for the result, so matching into a
+  string-literal union needs a type argument on each call: `caseValue<Grade>(…)`.

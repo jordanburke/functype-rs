@@ -1,0 +1,6 @@
+{
+  "endpoints": [
+    { "name": "no-content", "paths": ["/no-content"], "retries": 1 },
+    { "name": "bad-json", "paths": ["/bad-json"], "retries": 1 }
+  ]
+}

@@ -82,4 +82,19 @@ jobs:
           cache-dependency-path: parity/ts/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm validate
-      - run: node ../run.mjs ts
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: parity/rust
+      - run: cargo fmt --check
+        working-directory: parity/rust
+      # No --locked: the lockfile also pins this repo's own crates, which change in normal PRs.
+      - run: cargo clippy --all-targets -- -D warnings
+        working-directory: parity/rust
+      - run: cargo test
+        working-directory: parity/rust
+      - run: cargo build
+        working-directory: parity/rust
+      - run: node ../run.mjs ts rust

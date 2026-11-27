@@ -1,0 +1,5 @@
+{
+  "/v1/array": [{ "status": 200, "body": ["ok", true] }],
+  "/v1/bom": [{ "status": 200, "text": "﻿{\"status\":\"ok\"}", "contentType": "application/json" }],
+  "/v1/fine": [{ "status": 200, "body": { "status": "ok" } }]
+}

@@ -59,7 +59,8 @@ const errorRow = (name: string, err: CheckError): Row => {
  *
  * Each path is fetched with retries; the first path that answers wins (`firstSuccessOf`). With
  * `waitUntilReady`, the whole thing is re-run until the body says `ready: true`. An optional
- * endpoint that answers 404 everywhere is `absent`, not `down`.
+ * endpoint is `absent`, not `down`, when the failure it ends with is a 404: with mirrors, that is
+ * the last mirror's error (`firstSuccessOf` returns the last failure).
  */
 export const check = (http: HttpClient, e: Endpoint): IO<never, never, Row> => {
   const attempt = (path: string): IO<never, HttpError, Hit> =>

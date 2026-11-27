@@ -1,6 +1,6 @@
 # TS functype → Rust mapping
 
-Status: revised 2026-11-27. IO decided: `async fn`, with the helpers in `functype-io`. Errors and the remaining modules mapped.
+Status: revised 2026-11-27. IO decided: `async fn`, with the helpers in `functype-io`. Errors and the remaining modules mapped. Tested on real code by `parity/`: a TS app and its Rust translation must give the same results on every fixture.
 Compared: TS `functype` 2.2.2 (release commit `14c12d44`; line references are to that commit) against `functype-rs` 0.1.1 (`main`).
 
 ## Goal
@@ -192,7 +192,7 @@ and `async fn` is what a Rust reader or an LLM writes by default.
 | `IO.succeed(a)` / `IO.fail(e)` | `Ok(a)` / `Err(e.into())` (`.into()` widens into the module error enum) |
 | `IO.sync(f)` / `IO.tryCatch(f, onErr)` | a sync call / `f().map_err(onErr)` |
 | `IO.async(f)` / `IO.tryPromise` | `.await` the future |
-| `IO.all` (default: all at once, `io/IO.ts:2439`) | `tokio::try_join!` / `futures::future::try_join_all` |
+| `IO.all` (default: all at once, `io/IO.ts:2439`) | `tokio::try_join!` / `futures::future::try_join_all`; when each effect can't fail (TS `.fold(…)` first), `futures::future::join_all` |
 | `IO.forEach` (default: one at a time, `io/IO.ts:2672`) | `for x in items { out.push(f(x).await?) }` |
 | `all` / `forEach` with `{ concurrency: n }` | `stream::iter(items).map(f).buffered(n).try_collect().await`. Same result type, but which error comes back can differ: `try_collect` returns the lowest-index error once earlier items finish, while TS fails on the first failure in time and aborts the rest (`io/IO.ts:2031-2045`) |
 | `IO.race(effects)` (first to settle, success or failure; takes an array, `io/IO.ts:2650`) | `tokio::select!` for a fixed set; `futures::future::select_all` for a dynamic list |
@@ -424,8 +424,10 @@ enum HttpError {
     Network(#[source] reqwest::Error),
     #[error("HTTP {status}")]
     Status { status: reqwest::StatusCode, body: String },
+    // A String, not reqwest::Error: the decode failures below come from serde_json, or from a
+    // content type that isn't JSON, and reqwest can't build those.
     #[error("decode error: {0}")]
-    Decode(#[source] reqwest::Error),
+    Decode(String),
 }
 
 // TS: Http.get(url, { decode }) with HttpClientConfig.baseUrl
@@ -441,9 +443,27 @@ async fn get_json<T: serde::de::DeserializeOwned>(
         let body = resp.text().await.unwrap_or_default();
         return Err(HttpError::Status { status, body });
     }
-    // `json()` reads the body, then parses. TS reports a failed read as a NetworkError and only a
-    // parse failure as a DecodeError (`fetch/Http.ts:292-296`).
-    resp.json::<T>().await.map_err(|e| if e.is_decode() { HttpError::Decode(e) } else { HttpError::Network(e) })
+    // TS parses JSON only for an application/json content type (`fetch/Http.ts:170-175`,
+    // `177-226`); otherwise its decoder gets the text or the Response, which an object decoder
+    // rejects, as it rejects the string below. Read the header before the body.
+    let is_json = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|ct| ct.contains("application/json"));
+    // A failed body read is a NetworkError in TS; only parsing is a DecodeError.
+    let text = resp.text().await.map_err(HttpError::Network)?;
+    let raw = if is_json {
+        serde_json::from_str::<serde_json::Value>(&text).map_err(|e| HttpError::Decode(e.to_string()))?
+    } else {
+        serde_json::Value::String(text)
+    };
+    // TS Decoder.object rejects anything but an object. A serde-derived struct also accepts a
+    // JSON array, filling fields by position, so check first.
+    if !raw.is_object() {
+        return Err(HttpError::Decode("expected object".to_string()));
+    }
+    serde_json::from_value(raw).map_err(|e| HttpError::Decode(e.to_string()))
 }
 
 // TS resolveUrl concatenates (`fetch/Http.ts:20-26`).
@@ -456,13 +476,16 @@ fn resolve_url(base: &str, url: &str) -> String {
 }
 ```
 
+`parity/rust/src/http.rs` runs this code against the TS app's results.
+
 | TS | Rust | Notes |
 |---|---|---|
 | `Http.get(url, { decode })` | `get_json` above | **Not `error_for_status()`**: it errors only on 4xx/5xx, so a 304 (or a 3xx with redirects off) decodes instead of failing as TS does (`fetch/Http.ts:278`). It also consumes the response, so the body is lost. And a single `#[from] reqwest::Error` would merge network, status and decode failures into one variant |
 | `HttpClientConfig.baseUrl` | `resolve_url` above | **Not `Url::join`**: joining `/users` onto `https://api.x/v1` gives `https://api.x/users`, where TS gives `/v1/users` |
 | `HttpClientConfig.defaultHeaders` | `reqwest::Client::builder().default_headers(…)` | |
+| `fetch` defaults | reqwest's default features | With `default-features = false`, add `charset` back, or `text()` keeps a leading BOM that `fetch` strips and JSON parsing fails; and add a TLS feature, or every `https` URL is a network error |
 | `NetworkError \| HttpStatusError \| DecodeError` | the `HttpError` enum above | |
-| parse by content type | check `resp.headers()` before `.json()` | TS parses JSON only when the content type includes `application/json`, and returns text for `text/*` (`fetch/Http.ts:170-175`); `.json()` ignores the content type |
+| parse by content type | `get_json` above: read the header, then the text | TS parses JSON only when the content type includes `application/json`; `.json()` ignores the content type, so a JSON-looking `text/plain` body would decode in Rust and fail in TS. For `text/*`, TS hands the decoder a string. For any other content type, or none, TS hands it the `Response` object itself (`fetch/Http.ts:208-209`), which `get_json`'s string doesn't reproduce: a decoder that reads `status` could succeed on it in TS |
 | `HttpResponse { data, status, headers }` | read `resp.status()` / `resp.headers()` before consuming the body | |
 | `retryWithBackoff`, `timeout` on the IO | functype-io `retry_with_backoff` around a factory; `tokio::time::timeout` | See IO |
 | `signal` | drop the future, or `select!` on a cancellation token | |
@@ -474,15 +497,51 @@ target is `serde::Deserialize` plus `serde_json::from_value` / `from_str`.
 
 | TS | Rust (`serde`) | Notes |
 |---|---|---|
-| `Decoder.object({ a, b })` | `#[derive(Deserialize)] struct { a, b }` | **TS collects every failing field into one `Composite` error; serde stops at the first.** Code that reports all field errors needs `Validated` over per-field results, not plain serde |
+| `Decoder.object({ a, b })` | `#[derive(Deserialize)] struct { a, b }`, after checking the value is an object | **TS collects every failing field into one `Composite` error; serde stops at the first.** Code that reports all field errors needs `Validated` over per-field results; see Collecting every field error below. **A derived struct also accepts a JSON array**, by position (`["ok", true]` fills `{ status, ready }`), which `Decoder.object` rejects (`decoder/DecoderCompanion.ts:189`) |
 | `Decoder.list(inner)` / `array` | `Vec<T>` | Same first-error difference |
 | `Decoder.map(inner)` | `IndexMap<String, T>` (indexmap's `serde` feature) | Keeps key order, as the type map requires; `HashMap` would not. Same first-error difference |
-| `Decoder.string` / `number` / `boolean` | `String` / `f64` (or an integer type) / `bool` | TS `number` is `f64`. An integer type rejects `1.0`, which TS accepts |
+| `Decoder.string` / `number` / `boolean` | `String` / `f64` (or an integer type) / `bool` | TS `number` is `f64`. An integer type rejects `1.0`, which TS accepts. For a TS `Number.isInteger` check, read `as_f64()` and test `fract() == 0.0`; `as_u64()` rejects `2.0` |
 | `Decoder.option(inner)` / `nullable(inner)` | `Option<T>` | Both sides read `null` and a missing key as `None` |
 | `Decoder.either.envelope({ ok, err })` | `#[serde(rename_all = "lowercase")] enum Envelope<R, L> { Ok(R), Err(L) }` | serde's externally tagged enum rejects **any** extra key (`{"ok": 1, "meta": "x"}` fails). TS ignores extra keys and takes `ok` first when both exist |
 | `Decoder.either.discriminated({ tag, leftTag, rightTag }, l, r)` | `#[serde(tag = "<tag>")]` enum with `#[serde(rename = "<leftTag>")]` / `"<rightTag>"` variants | |
 | `Decoder.fromThrowing(zod.parse)` | a `Deserialize` type, or `TryFrom` after deserializing | |
 | `DecoderError` (`Leaf { path, message }` / `Composite { path, children }`) | `serde_json::Error` (line and column, one error) | For field paths, add `serde_path_to_error` |
+| `JSON.parse` (under every decoder) | `serde_json::from_str` | Not identical: `JSON.parse` reads `1e400` as `Infinity` and accepts a lone surrogate such as `"\ud800"`; `serde_json` rejects both |
+
+#### Collecting every field error
+
+Walk a `serde_json::Value` and build each field as a `Validated` whose error is the field's
+path. `zip4` / `zip` combine fields and `sequence` combines array items, so every error is kept.
+Treat a missing key like `null`: TS reads it as `undefined`, which `Decoder.option` maps to
+`None` and every other decoder rejects.
+
+```rust
+use functype_core::validated::{sequence, Validated};
+
+type Field<A> = Validated<String, A>; // the error is the field's path
+
+fn non_empty_string(v: &Value, path: &str) -> Field<String> {
+    match v.as_str() {
+        Some(s) if !s.is_empty() => Validated::valid(s.to_string()),
+        _ => Validated::invalid(path.to_string()),
+    }
+}
+
+fn endpoint(v: &Value, path: &str) -> Field<Endpoint> {
+    let Some(obj) = v.as_object() else { return Validated::invalid(path.to_string()) };
+    let get = |k: &str| obj.get(k).unwrap_or(&Value::Null);
+    let name = non_empty_string(get("name"), &format!("{path}.name"));
+    let retries = non_negative_int(get("retries"), &format!("{path}.retries"));
+    name.zip(&retries).map(|(name, retries)| Endpoint { name, retries })
+}
+
+// TS Decoder.array(endpoint): index paths as `endpoints[0]`, the format DecoderError.format uses.
+let endpoints = sequence(items.iter().enumerate().map(|(i, e)| endpoint(e, &format!("endpoints[{i}]"))));
+```
+
+`zip` takes the other side by reference and needs `Clone` values. A field validated after another
+succeeds (a non-empty list after its items) goes in `and_then`, so its error only appears when
+the first check passes, as in TS. `parity/rust/src/config.rs` is the full version.
 
 ### Serialization (`toJSON`)
 
