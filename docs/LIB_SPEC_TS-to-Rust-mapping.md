@@ -48,7 +48,7 @@ stable by then (`inspect`/`inspect_err` 1.76, `LazyLock` 1.80), and indexmap 2.1
 | `DoAsync` | `async` block + `?` | same caveat as `Do` |
 | `List<T>` | `Vec<T>` | TS `List` copies its array on every change (`list/List.ts:270-304`). See List methods |
 | `LazyList<T>` | `impl Iterator<Item = T>` | std |
-| `Map<K, V>` / `Set<T>` | `indexmap::IndexMap` / `IndexSet` | TS `Map` wraps the ES Map (`map/Map.ts:247-248`), which iterates in insertion order. `HashMap` (arbitrary) and `BTreeMap` (sorted) change iteration order. Use them only where order is not observed. Remove with **`shift_remove`**: `IndexMap::remove` is deprecated because it reorders the map (indexmap 2.x) |
+| `Map<K, V>` / `Set<T>` | `indexmap::IndexMap` / `IndexSet` | TS `Map` wraps the ES Map (`map/Map.ts:248-249`), which iterates in insertion order. `HashMap` (arbitrary) and `BTreeMap` (sorted) change iteration order. Use them only where order is not observed. Remove with **`shift_remove`**: `IndexMap::remove` is deprecated because it reorders the map (indexmap 2.x) |
 | `Stack<T>` | `Vec<T>` (`push`/`pop`/`last`) | TS `Stack` is immutable; apply the `List` clone rule |
 | `Lazy<T>` | `LazyLock<Result<T, E>>` / `OnceLock` | TS `Lazy` memoizes a thrown error (`lazy/Lazy.ts:219-246`); a panicking `LazyLock` poisons and re-panics instead. Make the error a value |
 | `Ref<A>` | `Cell`/`RefCell` (one thread), `Arc<Mutex<A>>` or atomics (shared) | std |
