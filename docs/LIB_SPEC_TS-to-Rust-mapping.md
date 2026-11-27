@@ -1,7 +1,7 @@
 # TS functype → Rust mapping
 
-Status: revised 2026-11-26. IO decided: `async fn`, with the helpers in `functype-io`. Errors and the remaining modules mapped.
-Compared: TS `functype` 2.2.1 (`~/IdeaProjects/functype`, `main`) against `functype-rs` 0.1.1 (`main`).
+Status: revised 2026-11-27. IO decided: `async fn`, with the helpers in `functype-io`. Errors and the remaining modules mapped.
+Compared: TS `functype` 2.2.2 (release commit `14c12d44`; line references are to that commit) against `functype-rs` 0.1.1 (`main`).
 
 ## Goal
 
@@ -35,7 +35,7 @@ stable by then (`inspect`/`inspect_err` 1.76, `LazyLock` 1.80), and indexmap 2.1
 
 ## Type map
 
-| TS functype 2.2.1 | Rust | Notes |
+| TS functype 2.2.2 | Rust | Notes |
 |---|---|---|
 | `Option<T>` | `std::option::Option<T>` | std |
 | `Option(nullable)` | the value is already `Option<T>` in Rust | std |
@@ -132,10 +132,10 @@ Each of these compiles and changes meaning, except the last, which is a rule to 
   `ResultExt::bimap(on_ok, on_err)` that compiled with same-typed sides and swapped them; it is
   removed.)
 - **TS IO recovery also catches defects; Rust `match Err` doesn't.** In TS the error channel
-  holds `Die` as well as `Failure` (`io/IO.ts:1131-1135`), and `Recover`, `RecoverWith` and
-  `MapError` branch on it (`io/IO.ts:1611-1630`). So a throw inside `IO.sync` is recovered or
-  retried by `recover`, `recoverWith`, `catchAll`, `mapError`, `retry*`, `firstSuccessOf` and
-  `timeoutTo`. In Rust a panic passes straight through `match fut.await { Err(e) => … }`.
+  holds `Die` as well as `Failure` (`io/IO.ts:1137-1141`), and `Recover`, `RecoverWith` and
+  `MapError` branch on it (`io/IO.ts:1617-1636`). So a throw inside `IO.sync` is recovered or
+  retried by `recover`, `recoverWith`, `catchAll`, `mapError`, `retry*` and `firstSuccessOf`.
+  (`timeoutTo` no longer does, as of 2.2.2.) In Rust a panic passes straight through `match fut.await { Err(e) => … }`.
   **Rule: anything the TS code expects to recover from must return `Err` in Rust.** A throwing
   TS step becomes a `Result`-returning Rust step. The functype-rs helpers do not catch panics;
   only `run_exit` reports one, as `Die`.
@@ -161,21 +161,21 @@ and `async fn` is what a Rust reader or an LLM writes by default.
 
 ### What TS `IO<R, E, A>` has
 
-- Typed error `E` that widens as you chain: `flatMap` gives `E | E2` (`io/IO.ts:365`),
-  `timeout` adds `TimeoutError` (728), `catchTag` gives `Exclude<E, {_tag: K}> | E2` (443).
-  `recover`/`timeoutTo` widen the value to `A | B` (413, 735).
+- Typed error `E` that widens as you chain: `flatMap` gives `E | E2` (`io/IO.ts:367`),
+  `timeout` adds `TimeoutError` (730), `catchTag` gives `Exclude<E, {_tag: K}> | E2` (442-445).
+  `recover`/`timeoutTo` widen the value to `A | B` (415, 741).
 - `run()` returns `Promise<Either<E, A>>` and **throws** on `Die` and `Interrupted`
-  (`io/IO.ts:1175-1179`); `runExit()` returns `Promise<Exit<E, A>>`; `runSync`, `runOrThrow`,
+  (`io/IO.ts:1181-1185`); `runExit()` returns `Promise<Exit<E, A>>`; `runSync`, `runOrThrow`,
   `runSyncOrThrow` exist.
 - Constructors: `sync`, `succeed`, `fail`, `die`, `async`, `tryPromise`, `tryCatch`, `all`,
   `forEach`, `race`, `firstSuccessOf`, `sleep`.
-- Do-notation: `IO.gen` (generator, `io/IO.ts:2710`) and the `IO.Do` builder (`io/IO.ts:2734`).
+- Do-notation: `IO.gen` (generator, `io/IO.ts:2728`) and the `IO.Do` builder (`io/IO.ts:2752`).
 - Policies: `retry`, `retryWithDelay`, `retryWhile`, `retryWithBackoff`, `repeatUntil`,
   `repeatWhile`, `timeout`, `timeoutTo`, `delay`, `interruptOn(signal)`.
 - Resources: `bracket`, `bracketExit`, `acquireRelease`.
 - Services: `provideService`, `provideContext`, `provideLayer`.
 - An `IO` value can run more than once: `retry` is `this.recoverWith(() => this.retry(n - 1))`
-  (`io/IO.ts:918-921`).
+  (`io/IO.ts:924-927`).
 
 ### The mapping
 
@@ -192,20 +192,20 @@ and `async fn` is what a Rust reader or an LLM writes by default.
 | `IO.succeed(a)` / `IO.fail(e)` | `Ok(a)` / `Err(e.into())` (`.into()` widens into the module error enum) |
 | `IO.sync(f)` / `IO.tryCatch(f, onErr)` | a sync call / `f().map_err(onErr)` |
 | `IO.async(f)` / `IO.tryPromise` | `.await` the future |
-| `IO.all` (default: all at once, `io/IO.ts:2421`) | `tokio::try_join!` / `futures::future::try_join_all` |
-| `IO.forEach` (default: one at a time, `io/IO.ts:2654`) | `for x in items { out.push(f(x).await?) }` |
-| `all` / `forEach` with `{ concurrency: n }` | `stream::iter(items).map(f).buffered(n).try_collect().await`. Same result type, but which error comes back can differ: `try_collect` returns the lowest-index error once earlier items finish, while TS fails on the first failure in time and aborts the rest (`io/IO.ts:2013-2027`) |
-| `IO.race(effects)` (first to settle, success or failure; takes an array, `io/IO.ts:2632`) | `tokio::select!` for a fixed set; `futures::future::select_all` for a dynamic list |
-| `IO.firstSuccessOf` (runs in sequence; first success, else last failure, `io/IO.ts:2452-2457`) | functype-rs `first_success_of(nev![…])`. It takes a `NonEmptyVec`, so an empty list fails to compile; TS dies at run time. All factories share one type: map one closure over the inputs, or box different effects as `Box<dyn FnOnce() -> BoxIO<'static, A, E> + Send>` (mixing unboxed closures fails with E0308) |
+| `IO.all` (default: all at once, `io/IO.ts:2439`) | `tokio::try_join!` / `futures::future::try_join_all` |
+| `IO.forEach` (default: one at a time, `io/IO.ts:2672`) | `for x in items { out.push(f(x).await?) }` |
+| `all` / `forEach` with `{ concurrency: n }` | `stream::iter(items).map(f).buffered(n).try_collect().await`. Same result type, but which error comes back can differ: `try_collect` returns the lowest-index error once earlier items finish, while TS fails on the first failure in time and aborts the rest (`io/IO.ts:2031-2045`) |
+| `IO.race(effects)` (first to settle, success or failure; takes an array, `io/IO.ts:2650`) | `tokio::select!` for a fixed set; `futures::future::select_all` for a dynamic list |
+| `IO.firstSuccessOf` (runs in sequence; first success, else last failure, `io/IO.ts:2470-2475`) | functype-rs `first_success_of(nev![…])`. It takes a `NonEmptyVec`, so an empty list fails to compile; TS dies at run time. All factories share one type: map one closure over the inputs, or box different effects as `Box<dyn FnOnce() -> BoxIO<'static, A, E> + Send>` (mixing unboxed closures fails with E0308) |
 | `IO.sleep(ms)` / `delay(ms)` | `tokio::time::sleep` |
 | `timeout(ms)` | `tokio::time::timeout(d, fut).await` → `Result<Result<A, E>, Elapsed>`; map `Elapsed` into the error enum |
-| `timeoutTo(ms, b)` | `match timeout(d, fut).await { Ok(Ok(a)) => a, _ => b }`. TS returns `b` on a timeout **and on any failure or defect**: it is `this.timeout(ms).recover(fallback)` (`io/IO.ts:1081-1083`), and the async `Recover` replaces anything in the error channel, defects included (1619-1623), though its type says `IO<R, E, A \| B>`. Open TS question: bug or intended? If TS changes, this row becomes `timeout(d, fut).await.unwrap_or(Ok(b))` |
-| `retry(n)` (no delay, `io/IO.ts:918-921`) | functype-rs `retry(n, \|\| get_user(id))` |
+| `timeoutTo(ms, b)` | `timeout(d, fut).await.unwrap_or(Ok(b))`. As of 2.2.2, TS returns `b` only when its own deadline passes (`io/IO.ts:1976-2004`); the effect's failures, defects and interruption pass through, and a cancelled run is `Interrupted`, not `b`. Before 2.2.2 it also replaced every failure; code that relied on that adds `.recover(b)` in TS, `.or_else(\|_\| Ok(b))` in Rust |
+| `retry(n)` (no delay, `io/IO.ts:924-927`) | functype-rs `retry(n, \|\| get_user(id))` |
 | `retryWithDelay(n, ms)` | functype-rs `retry_with_delay(n, d, factory)`, or `backon` `ConstantBuilder::default().with_delay(d).with_max_times(n)` |
-| `retryWithBackoff(opts)` | functype-rs `retry_with_backoff(Backoff::new(n, base), factory)`; `maxMs`/`factor`/`jitter` → `.with_max(d)`/`.with_factor(f)`/`.with_jitter(b)`; with `while` → `retry_with_backoff_while(policy, retry_if, factory)`. `Backoff::new` sets the TS defaults (jitter on at 50–100% of the delay, 30 s cap, `io/IO.ts:941-943`). `backon` `ExponentialBuilder` works only with every setting explicit (`with_max_times`, `with_min_delay`, `with_max_delay`, `with_jitter`): its defaults (no jitter, factor 2, 1 s min, 60 s max, 3 tries) differ from TS, and its jitter formula differs too |
+| `retryWithBackoff(opts)` | functype-rs `retry_with_backoff(Backoff::new(n, base), factory)`; `maxMs`/`factor`/`jitter` → `.with_max(d)`/`.with_factor(f)`/`.with_jitter(b)`; with `while` → `retry_with_backoff_while(policy, retry_if, factory)`. `Backoff::new` sets the TS defaults (jitter on at 50–100% of the delay, 30 s cap, `io/IO.ts:947-949`). `backon` `ExponentialBuilder` works only with every setting explicit (`with_max_times`, `with_min_delay`, `with_max_delay`, `with_jitter`): its defaults (no jitter, factor 2, 1 s min, 60 s max, 3 tries) differ from TS, and its jitter formula differs too |
 | `retryWhile({ n, while, delayMs })` (predicate gets `(error, attempt)`, attempt 1-indexed) | functype-rs `retry_while(n, delay, retry_if, factory)`, with `delay: Option<Duration>` and `retry_if: FnMut(&E, usize) -> bool` |
-| `repeatUntil(done, { max })` / `repeatWhile` | functype-rs `repeat_until(max, delay, done, factory)` / `repeat_while(max, delay, keep_going, factory)`, returning `Result<A, RepeatError<E, A>>`: `RepeatError::Failure(e)` for the first `Err`, `RepeatError::Exhausted(RepeatExhausted { max, last_value })` after `max` runs. TS `E \| RepeatExhausted<A>` becomes that enum; widen it into a module error enum with `From` (`io/IO.ts:959-971`). **Not a bare `loop`**: it compiles and can spin forever |
-| `interruptOn(signal)` | `tokio_util::sync::CancellationToken` + `select!`, mapping cancellation to an `Interrupted` variant of the error enum (TS puts `InterruptedError` in `E`, `io/IO.ts:770`) |
+| `repeatUntil(done, { max })` / `repeatWhile` | functype-rs `repeat_until(max, delay, done, factory)` / `repeat_while(max, delay, keep_going, factory)`, returning `Result<A, RepeatError<E, A>>`: `RepeatError::Failure(e)` for the first `Err`, `RepeatError::Exhausted(RepeatExhausted { max, last_value })` after `max` runs. TS `E \| RepeatExhausted<A>` becomes that enum; widen it into a module error enum with `From` (`io/IO.ts:965-977`). **Not a bare `loop`**: it compiles and can spin forever |
+| `interruptOn(signal)` | `tokio_util::sync::CancellationToken` + `select!`, mapping cancellation to an `Interrupted` variant of the error enum (TS puts `InterruptedError` in `E`, `io/IO.ts:776`) |
 | `bracket` / `acquireRelease` | a `Drop` guard for sync release; see Limits |
 | `run()` | `.await` |
 | `runExit({ signal })` | functype-rs `run_exit(fut, token.cancelled()).await` → `Exit<E, A>`. The second argument is any cancellation future; `runExit()` with no signal → `std::future::pending()` |
@@ -220,7 +220,7 @@ Only the gaps:
 - **`Exit<E, A>`** with `Success`/`Failure`/`Die`/`Interrupted`, and
   **`run_exit(fut, cancelled)`**, which runs a future, catches a panic as `Die`, and reports
   `Interrupted` when `cancelled` finishes first, as TS `runExit({ signal })` does
-  (`io/IO.ts:1035-1042`). `cancelled` is any future, such as `token.cancelled()` from
+  (`io/IO.ts:1041-1048`). `cancelled` is any future, such as `token.cancelled()` from
   `tokio_util::sync::CancellationToken`, so functype-rs doesn't depend on `tokio-util`. A dropped
   future reports nothing, so the argument is required. As in TS, an already-done cancel stops
   the effect before it starts. After that, Rust sees the cancel only between polls: a failure
@@ -296,7 +296,7 @@ The mapping:
 - Services travel in **one deps struct** per module, passed by reference (`&Deps`). Pick this one
   shape rather than mixing arguments and trait bounds.
 - `Layer<RIn, E, ROut>` → `async fn build(deps: &RIn) -> Result<ROut, E>`, because
-  `provideLayer` awaits the build and carries its error (`io/IO.ts:616,1004-1014`).
+  `provideLayer` awaits the build and carries its error (`io/IO.ts:618,1010-1020`).
 - `provideService` / `provideContext` / `provideLayer` → build the deps struct, then call the fn
   with it.
 
@@ -519,7 +519,6 @@ Keep: `fdo!` and `Pure` (they back the `Do` mapping), `Validated`, `NonEmptyVec`
 
 ## Next steps
 
-1. Ask on the TS side whether `timeoutTo` recovering every failure is intended.
-2. Revisit `functype_core::Either` and the persistent collections if translated code never uses them.
-3. A serde adapter for functype's `{ "@functype", "_tag", "value" }` JSON, for services that talk to TS.
-4. Map `Obj`.
+1. Revisit `functype_core::Either` and the persistent collections if translated code never uses them.
+2. A serde adapter for functype's `{ "@functype", "_tag", "value" }` JSON, for services that talk to TS.
+3. Map `Obj`.
