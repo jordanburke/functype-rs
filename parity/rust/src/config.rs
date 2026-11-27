@@ -41,10 +41,11 @@ fn non_empty_string(v: &Value, path: &str) -> Field<String> {
 }
 
 /// TS `Number.isInteger(n) && n >= 0`. JSON `2.0` is an integer in TS, so this reads the value
-/// as `f64` rather than `as_u64`, which would reject it.
+/// as `f64` rather than `as_u64`, which would reject it. TS has no upper bound; `as usize`
+/// saturates a huge value instead of rejecting it.
 fn non_negative_int(v: &Value, path: &str) -> Field<usize> {
     match v.as_f64() {
-        Some(n) if n >= 0.0 && n.fract() == 0.0 && n <= u32::MAX as f64 => Validated::valid(n as usize),
+        Some(n) if n >= 0.0 && n.fract() == 0.0 => Validated::valid(n as usize),
         _ => Validated::invalid(path.to_string()),
     }
 }

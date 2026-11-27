@@ -57,8 +57,9 @@ impl Http {
             let body = resp.text().await.unwrap_or_default();
             return Err(HttpError::Status { status, body });
         }
-        // TS parses JSON only for an application/json content type, and otherwise hands the
-        // decoder the body text, which a decoder expecting an object rejects.
+        // TS parses JSON only for an application/json content type. Otherwise it hands the
+        // decoder the body text (`text/*`) or the `Response` object itself (anything else);
+        // a decoder expecting an object rejects both, as it rejects the string here.
         let is_json = resp
             .headers()
             .get(CONTENT_TYPE)
@@ -71,8 +72,18 @@ impl Http {
         } else {
             Value::String(text)
         };
-        serde_json::from_value(raw).map_err(|e| HttpError::Decode(e.to_string()))
+        decode_object(raw).map_err(HttpError::Decode)
     }
+}
+
+/// TS `Decoder.object(shape)` for a serde type: reject anything but a JSON object first.
+/// A serde-derived struct also accepts a JSON array, filling fields by position, which
+/// `Decoder.object` rejects (`decoder/DecoderCompanion.ts:189`).
+pub fn decode_object<T: DeserializeOwned>(raw: Value) -> Result<T, String> {
+    if !raw.is_object() {
+        return Err("expected object".to_string());
+    }
+    serde_json::from_value(raw).map_err(|e| e.to_string())
 }
 
 /// TS `resolveUrl` concatenates (`fetch/Http.ts:20-26`); `Url::join` would drop the base path.
@@ -91,6 +102,23 @@ pub fn resolve_url(base: &str, url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Debug, serde::Deserialize)]
+    #[allow(dead_code)]
+    struct Pair {
+        a: String,
+        b: Option<bool>,
+    }
+
+    #[test]
+    fn decode_object_rejects_what_decoder_object_rejects() {
+        assert!(decode_object::<Pair>(serde_json::json!({ "a": "x" })).is_ok());
+        // serde alone would accept this array as { a: "x", b: true }.
+        assert!(serde_json::from_value::<Pair>(serde_json::json!(["x", true])).is_ok());
+        assert!(decode_object::<Pair>(serde_json::json!(["x", true])).is_err());
+        assert!(decode_object::<Pair>(serde_json::json!("x")).is_err());
+        assert!(decode_object::<Pair>(Value::Null).is_err());
+    }
 
     #[test]
     fn resolve_url_matches_ts() {

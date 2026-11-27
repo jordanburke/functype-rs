@@ -443,8 +443,9 @@ async fn get_json<T: serde::de::DeserializeOwned>(
         let body = resp.text().await.unwrap_or_default();
         return Err(HttpError::Status { status, body });
     }
-    // TS parses JSON only for an application/json content type, and otherwise hands the decoder
-    // the body text (`fetch/Http.ts:170-175`, `177-226`). Read the header before the body.
+    // TS parses JSON only for an application/json content type (`fetch/Http.ts:170-175`,
+    // `177-226`); otherwise its decoder gets the text or the Response, which an object decoder
+    // rejects, as it rejects the string below. Read the header before the body.
     let is_json = resp
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -457,6 +458,11 @@ async fn get_json<T: serde::de::DeserializeOwned>(
     } else {
         serde_json::Value::String(text)
     };
+    // TS Decoder.object rejects anything but an object. A serde-derived struct also accepts a
+    // JSON array, filling fields by position, so check first.
+    if !raw.is_object() {
+        return Err(HttpError::Decode("expected object".to_string()));
+    }
     serde_json::from_value(raw).map_err(|e| HttpError::Decode(e.to_string()))
 }
 
@@ -477,6 +483,7 @@ fn resolve_url(base: &str, url: &str) -> String {
 | `Http.get(url, { decode })` | `get_json` above | **Not `error_for_status()`**: it errors only on 4xx/5xx, so a 304 (or a 3xx with redirects off) decodes instead of failing as TS does (`fetch/Http.ts:278`). It also consumes the response, so the body is lost. And a single `#[from] reqwest::Error` would merge network, status and decode failures into one variant |
 | `HttpClientConfig.baseUrl` | `resolve_url` above | **Not `Url::join`**: joining `/users` onto `https://api.x/v1` gives `https://api.x/users`, where TS gives `/v1/users` |
 | `HttpClientConfig.defaultHeaders` | `reqwest::Client::builder().default_headers(…)` | |
+| `fetch` defaults | reqwest's default features | With `default-features = false`, add `charset` back, or `text()` keeps a leading BOM that `fetch` strips and JSON parsing fails; and add a TLS feature, or every `https` URL is a network error |
 | `NetworkError \| HttpStatusError \| DecodeError` | the `HttpError` enum above | |
 | parse by content type | `get_json` above: read the header, then the text | TS parses JSON only when the content type includes `application/json`; `.json()` ignores the content type, so a JSON-looking `text/plain` body would decode in Rust and fail in TS. For `text/*`, TS hands the decoder a string. For any other content type, or none, TS hands it the `Response` object itself (`fetch/Http.ts:208-209`), which `get_json`'s string doesn't reproduce: a decoder that reads `status` could succeed on it in TS |
 | `HttpResponse { data, status, headers }` | read `resp.status()` / `resp.headers()` before consuming the body | |
@@ -490,7 +497,7 @@ target is `serde::Deserialize` plus `serde_json::from_value` / `from_str`.
 
 | TS | Rust (`serde`) | Notes |
 |---|---|---|
-| `Decoder.object({ a, b })` | `#[derive(Deserialize)] struct { a, b }` | **TS collects every failing field into one `Composite` error; serde stops at the first.** Code that reports all field errors needs `Validated` over per-field results; see Collecting every field error below |
+| `Decoder.object({ a, b })` | `#[derive(Deserialize)] struct { a, b }`, after checking the value is an object | **TS collects every failing field into one `Composite` error; serde stops at the first.** Code that reports all field errors needs `Validated` over per-field results; see Collecting every field error below. **A derived struct also accepts a JSON array**, by position (`["ok", true]` fills `{ status, ready }`), which `Decoder.object` rejects (`decoder/DecoderCompanion.ts:189`) |
 | `Decoder.list(inner)` / `array` | `Vec<T>` | Same first-error difference |
 | `Decoder.map(inner)` | `IndexMap<String, T>` (indexmap's `serde` feature) | Keeps key order, as the type map requires; `HashMap` would not. Same first-error difference |
 | `Decoder.string` / `number` / `boolean` | `String` / `f64` (or an integer type) / `bool` | TS `number` is `f64`. An integer type rejects `1.0`, which TS accepts. For a TS `Number.isInteger` check, read `as_f64()` and test `fract() == 0.0`; `as_u64()` rejects `2.0` |
@@ -499,6 +506,7 @@ target is `serde::Deserialize` plus `serde_json::from_value` / `from_str`.
 | `Decoder.either.discriminated({ tag, leftTag, rightTag }, l, r)` | `#[serde(tag = "<tag>")]` enum with `#[serde(rename = "<leftTag>")]` / `"<rightTag>"` variants | |
 | `Decoder.fromThrowing(zod.parse)` | a `Deserialize` type, or `TryFrom` after deserializing | |
 | `DecoderError` (`Leaf { path, message }` / `Composite { path, children }`) | `serde_json::Error` (line and column, one error) | For field paths, add `serde_path_to_error` |
+| `JSON.parse` (under every decoder) | `serde_json::from_str` | Not identical: `JSON.parse` reads `1e400` as `Infinity` and accepts a lone surrogate such as `"\ud800"`; `serde_json` rejects both |
 
 #### Collecting every field error
 

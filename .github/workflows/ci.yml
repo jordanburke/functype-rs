@@ -90,10 +90,11 @@ jobs:
           workspaces: parity/rust
       - run: cargo fmt --check
         working-directory: parity/rust
-      - run: cargo clippy --all-targets --locked -- -D warnings
+      # No --locked: the lockfile also pins this repo's own crates, which change in normal PRs.
+      - run: cargo clippy --all-targets -- -D warnings
         working-directory: parity/rust
-      - run: cargo test --locked
+      - run: cargo test
         working-directory: parity/rust
-      - run: cargo build --locked
+      - run: cargo build
         working-directory: parity/rust
       - run: node ../run.mjs ts rust

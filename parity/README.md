@@ -75,6 +75,8 @@ each turned at least one fixture red:
 | a missing `ready` counted as ready | `wait-until-ready` |
 | mirrors tried in reverse order | `mirrors` |
 | network errors not retried | `network-retry` |
+| a serde struct accepting a JSON array | `decoder-edges` |
+| reqwest without `charset` (BOM kept) | `decoder-edges` |
 
 ## Findings
 
@@ -92,12 +94,20 @@ repo's crates, or noted for the library it belongs to.
   hands the decoder the `Response` object itself.
 - **`IO.all` over effects that can't fail** maps to `join_all`, not `try_join_all`.
 - **`Number.isInteger`** maps to `as_f64()` plus `fract() == 0.0`; `as_u64()` rejects `2.0`.
+- **A serde-derived struct accepts a JSON array** by position, which `Decoder.object` rejects.
+  `get_json` now checks for an object first.
+- **reqwest without default features** keeps a leading BOM in `text()` (it needs `charset`) and
+  can't reach `https` URLs. `fetch` strips the BOM.
+- **`serde_json` and `JSON.parse` differ** on `1e400` and lone surrogates.
 
 ### functype-rs (fixed)
 
 - **`NonEmptyVec::map` couldn't return a value borrowing the element**, such as a
   `first_success_of` factory that captures a path. It now ties the borrow to the vec, as
-  `Iterator::map` over `iter()` does, and accepts `FnMut`.
+  `Iterator::map` over `iter()` does, and accepts `FnMut`. This is a small breaking change:
+  `NonEmptyVec::map` used as a function value no longer coerces to a higher-ranked signature,
+  such as `let f: fn(&NonEmptyVec<i32>, fn(&i32) -> i32) -> NonEmptyVec<i32> = NonEmptyVec::map;`.
+  Ordinary calls compile as before.
 
 ### TS functype
 

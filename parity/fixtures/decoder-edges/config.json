@@ -1,0 +1,7 @@
+{
+  "endpoints": [
+    { "name": "array-body", "paths": ["/array"], "retries": 0 },
+    { "name": "bom-body", "paths": ["/bom"], "retries": 0 },
+    { "name": "huge-retries", "paths": ["/fine"], "retries": 5000000000 }
+  ]
+}
