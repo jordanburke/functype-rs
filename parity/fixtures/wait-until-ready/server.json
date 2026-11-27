@@ -1,0 +1,15 @@
+{
+  "/v1/warming": [
+    { "status": 200, "body": { "status": "ok", "ready": false } },
+    { "status": 200, "body": { "status": "ok", "ready": false } },
+    { "status": 200, "body": { "status": "ok", "ready": true } }
+  ],
+  "/v1/stuck": [{ "status": 200, "body": { "status": "degraded", "ready": false } }],
+  "/v1/silent": [{ "status": 200, "body": { "status": "ok" } }],
+  "/v1/flaky-warming": [
+    { "status": 503 },
+    { "status": 200, "body": { "status": "ok", "ready": false } },
+    { "status": 503 },
+    { "status": 200, "body": { "status": "ok", "ready": true } }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "/v1/cached": [{ "status": 304 }],
+  "/v1/text": [{ "status": 200, "text": "{\"status\":\"ok\"}", "contentType": "text/plain" }],
+  "/v1/shape": [{ "status": 200, "body": { "status": 5 } }],
+  "/v1/null-ready": [{ "status": 200, "body": { "status": "ok", "ready": null } }]
+}

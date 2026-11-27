@@ -1,0 +1,33 @@
+{
+  "exitCode": 1,
+  "report": {
+    "checks": [
+      {
+        "name": "absent",
+        "grade": "absent",
+        "path": null,
+        "error": null,
+        "status": 404
+      },
+      {
+        "name": "optional-but-broken",
+        "grade": "down",
+        "path": null,
+        "status": 500,
+        "error": "status"
+      },
+      {
+        "name": "required",
+        "grade": "down",
+        "path": null,
+        "status": 404,
+        "error": "status"
+      }
+    ]
+  },
+  "requests": {
+    "/v1/absent": 1,
+    "/v1/broken": 1,
+    "/v1/required": 1
+  }
+}

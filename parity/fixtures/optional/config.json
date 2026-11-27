@@ -1,0 +1,7 @@
+{
+  "endpoints": [
+    { "name": "absent", "paths": ["/absent"], "retries": 2, "optional": true },
+    { "name": "optional-but-broken", "paths": ["/broken"], "retries": 0, "optional": true },
+    { "name": "required", "paths": ["/required"], "retries": 0, "optional": false }
+  ]
+}

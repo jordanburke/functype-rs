@@ -1,0 +1,33 @@
+{
+  "exitCode": 1,
+  "report": {
+    "checks": [
+      {
+        "name": "flaky",
+        "grade": "healthy",
+        "path": "/flaky",
+        "error": null,
+        "status": null
+      },
+      {
+        "name": "exhausted",
+        "grade": "down",
+        "path": null,
+        "status": 503,
+        "error": "status"
+      },
+      {
+        "name": "client-error",
+        "grade": "down",
+        "path": null,
+        "status": 400,
+        "error": "status"
+      }
+    ]
+  },
+  "requests": {
+    "/v1/client-error": 1,
+    "/v1/exhausted": 2,
+    "/v1/flaky": 3
+  }
+}

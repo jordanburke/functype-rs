@@ -1,0 +1,5 @@
+{
+  "/v1/api": [{ "status": 200, "body": { "status": "ok" } }],
+  "/v1/worker": [{ "status": 200, "body": { "status": "degraded" } }],
+  "/v1/legacy": [{ "status": 200, "body": { "status": "green" } }]
+}

@@ -1,0 +1,7 @@
+{
+  "endpoints": [
+    { "name": "flaky", "paths": ["/flaky"], "retries": 2 },
+    { "name": "exhausted", "paths": ["/exhausted"], "retries": 1 },
+    { "name": "client-error", "paths": ["/client-error"], "retries": 3 }
+  ]
+}

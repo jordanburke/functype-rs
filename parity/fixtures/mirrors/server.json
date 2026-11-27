@@ -1,0 +1,5 @@
+{
+  "/v1/primary": [{ "status": 500 }],
+  "/v1/mirror": [{ "status": 200, "body": { "status": "ok" } }],
+  "/v1/unused": [{ "status": 200, "body": { "status": "ok" } }]
+}

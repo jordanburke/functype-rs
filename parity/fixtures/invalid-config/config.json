@@ -1,0 +1,7 @@
+{
+  "endpoints": [
+    { "name": "", "paths": [], "retries": -1 },
+    { "name": "half-right", "paths": ["/x"], "retries": 1.5, "optional": "yes", "waitUntilReady": 0 },
+    { "paths": [3] }
+  ]
+}
